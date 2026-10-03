@@ -1,0 +1,33 @@
+# Visual Studio and MSBuild output
+.vs/
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.VC.VC.opendb
+*.VC.db-shm
+*.VC.db-wal
+*.pdb
+*.ilk
+*.ipch
+*.tlog
+*.lastbuildstate
+
+# Runtime data stored beside a locally installed addon
+TacoPacks/
+installed-packs.json
+settings.txt
+
+# Ignore local dependency copies with either repository layout.
+# To register these paths as submodules later, use git submodule add -f.
+/src/nexus/
+/src/mumble/
+/src/imgui/
+/Taquito/src/nexus/
+/Taquito/src/mumble/
+/Taquito/src/imgui/
