@@ -12,7 +12,7 @@ Taquito is like a super light weight yet clean version of GW2 TacO for Nexus use
 - Install personal packs along side downloaded packs
 
 ## Notes for Pack Developers
-- All standard Category and POI attributes used by TacO and Blish HUD
+- All standard Category and POI attributes used by Blish HUD
 - Reads both .taco and .zip packs containing the standard XML/PNG/TRL layouts
 
 ### Taquito-Specific Sticky Attributes
