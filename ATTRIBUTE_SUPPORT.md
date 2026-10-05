@@ -59,9 +59,11 @@ These Taquito-only attributes apply to MarkerCategory or POI and inherit like ot
 
 | XML name | Type; default | Effect |
 | --- | --- | --- |
-| screenSticky | bool; false | true draws iconFile in fixed screen space instead of as a 3D world billboard. false restores normal world placement and size. |
+| screenSticky | bool; true | true draws iconFile in fixed screen space. false keeps normal world placement and size, ignoring sticky attributes. |
+| stickyHideOriginal | bool; true | true hides the original world billboard marker. false keeps the original marker while still showing the sticky. |
 | stickyX | float; 0 pixels | Image center offset from screen center; positive moves right. |
 | stickyY | float; 0 pixels | Image center offset from screen center; positive moves up. |
 | stickyScale | float; 1 | Multiplier of source image pixel dimensions. |
+| stickyDistance | float; 100 | The unit distance at which the sticky attributes take over. |
 
-MapID, position, fadeNear, fadeFar (game inches), alpha, category toggle and inGameVisibility still govern a sticky POI. iconSize, heightOffset and rotate do not affect its screen placement. The nearest eligible image displays. It is moved inside screen edges and scaled down proportionally if needed; it disappears while the full map is open.
+MapID, position, alpha, category toggle and inGameVisibility still govern a sticky POI. iconSize, heightOffset and rotate do not affect its screen placement. The nearest eligible image displays. It is moved inside screen edges and scaled down proportionally if needed; it disappears while the full map is open.
