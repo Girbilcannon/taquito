@@ -34,8 +34,17 @@ Taquito comes with a few attributes dedicated to marker textures being locked to
 - **Attribute Use:** `stickyScale="#.#"`
 - **Info:** *Entered value should be a whole or decimal value. A good starting point is always "1.0"*
 
+#### STICKYDISTANCE
+- Attribute Use:** `stickyDistance="###"`
+- **Info:** *Entered value is the unit distance (game inches) at which the sticky marker becomes active. 100-300 is usually a perfect distance.*
+
+#### STICKYHIDEORIGINAL
+- Attribute Uise:** `stickyHideOriginal="true/false"`
+- **Info:** *"true" makes the original world marker hidden when the sticky pops on screen. "false" keeps the original on screen behind the sticky marker.*
+
+
 #### EXAMPLE USE
 ```xml
-<MarkerCategory name="markerName" DisplayName="Sticky Marker" fadeNear="350" fadeFar="370" iconFile="DATA/stickyMarker.png" screenSticky="true" stickyX="560" stickyY="0" stickyScale="1.0"/>
+<MarkerCategory name="markerName" DisplayName="Sticky Marker" fadeNear="3500" fadeFar="3600" iconSize="1.0" heightOffset="2.0" iconFile="DATA/stickyMarker.png" screenSticky="true" stickyDistance="300" stickyHideOriginal="true" stickyX="560" stickyY="0" stickyScale="1.0"/>
 ```
 These attributes can be used along side any other standard attribute. As long as screenSticky attribute is set to True, it will always override other positioning and scaling attributes. Setting to false or using a pack with these attributes in other pathing tools will simply revert the sticky markers to their other specified attribute positions. Scale and Position use screen edge safezones, meaning that if the image is too big or you set it too far to one side (like off screen), it will lock back to the edge of the screen and scale down to be fully visible.
