@@ -188,7 +188,7 @@ void QuickMenu::Render() {
     const auto shortcut=ShortcutSettings::Poll(focused,focused&&!rawMumble->Context.IsTextboxFocused);
     if(ShortcutSettings::MousePressed()&1u){leftCycleSeen=true;menuAtLeftPress=showMenu;}
     if(ShortcutSettings::MouseReleased()&1u)lastLeftReleaseFrame=ImGui::GetFrameCount();
-    bool shortcutsChanged=shortcut.changed;
+    bool shortcutsChanged=false;
     if(shortcut.actions&1u){settings.renderingEnabled=!settings.renderingEnabled;shortcutsChanged=true;}
     if(shortcut.actions&8u)QuickMenu::RequestToggle();
     if(packsReady&&((shortcut.actions&2u&&Presets::Step(1,packs))||(shortcut.actions&4u&&Presets::Step(-1,packs)))){PresetChanged();}

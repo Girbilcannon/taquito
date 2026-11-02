@@ -17,7 +17,7 @@ namespace AppSettings {
         bool renderingEnabled=true; // Session-only master switch, shared with map consumers.
         bool presetsEnabled=false;
         bool quickCloseMenu=false;
-        std::array<Shortcut,4> shortcuts{};
+        std::array<Shortcut,4> shortcuts{}; // Legacy migration defaults only; Nexus owns active keybinds.
         HudPosition infoHud,copyHud;
         NestingStyle nestingStyle = NestingStyle::Taquito;
         MapTrailStyle mapTrailStyle = MapTrailStyle::Taco;

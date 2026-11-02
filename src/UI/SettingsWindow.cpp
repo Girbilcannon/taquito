@@ -1,6 +1,5 @@
 #include "SettingsWindow.h"
 #include "PackBrowserWindow.h"
-#include "ShortcutSettings.h"
 #include "../Core/Presets.h"
 #include "OverlayRenderer.h"
 #include "../Core/AppRuntime.h"
@@ -23,14 +22,14 @@ bool shown=false;
 bool resetDiagnostics=true;
 }
 void SettingsWindow::Open() { shown=true; resetDiagnostics=true; }
-void SettingsWindow::Close() { shown=false; ShortcutSettings::Reset(); }
+void SettingsWindow::Close() { shown=false; }
 void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Renderer& renderer,
                             bool loading, void (*reload)(), void (*save)()) {
     if(!shown) return;
     ImGui::SetNextWindowSize({620,440},ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints({520,320},{FLT_MAX,FLT_MAX});
     if(!ImGui::Begin("Taquito Settings##Taquito",&shown)) {
-        ImGui::End(); if(!shown)ShortcutSettings::Reset(); return;
+        ImGui::End(); return;
     }
     const auto& folder=AppRuntime::GetPacksDirectory();
     auto& settings=AppSettings::Get();
@@ -38,8 +37,6 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
     ImGui::TextDisabled("Taquito " TAQUITO_VERSION);
     ImGui::Spacing();
     if(!Presets::Status().empty())ImGui::TextWrapped("%s",Presets::Status().c_str());
-    if(ImGui::BeginTabBar("##SettingsTabs")) {
-    if(ImGui::BeginTabItem("General")) {
     if(ImGui::CollapsingHeader("Display",ImGuiTreeNodeFlags_DefaultOpen)) {
         changed |= ImGui::Checkbox("Rendering enabled",&settings.renderingEnabled);
         changed |= ImGui::Checkbox("In-world markers and trails",&settings.world);
@@ -185,15 +182,6 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
             }
         }
     }
-    ImGui::EndTabItem();
-    }
-    if(ImGui::BeginTabItem("Keybinds")) {
-        ShortcutSettings::Draw();
-        ImGui::EndTabItem();
-    }
-    ImGui::EndTabBar();
-    }
     if(changed) save();
     ImGui::End();
-    if(!shown)ShortcutSettings::Reset();
 }

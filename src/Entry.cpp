@@ -11,6 +11,7 @@
 #include "TaquitoAPI.h"
 #include "UI/QuickMenu.h"
 #include "UI/PresetsWindow.h"
+#include "UI/ShortcutSettings.h"
 #include "UI/MarkerInteractions.h"
 #include "resource.h"
 
@@ -20,6 +21,9 @@ constexpr const char* QuickID = "TAQUITO_QUICKACCESS_78FD302C";
 constexpr const char* PresetsContextID = "TAQUITO_PRESETS_CONTEXT_78FD302C";
 constexpr const char* IconID = "TAQUITO_ICON_78FD302C_V2";
 constexpr const char* BindID = "KB_TAQUITO_MENU_78FD302C_V2";
+constexpr const char* RenderBindID = "KB_TAQUITO_RENDERING_78FD302C";
+constexpr const char* NextBindID = "KB_TAQUITO_NEXT_PRESET_78FD302C";
+constexpr const char* PreviousBindID = "KB_TAQUITO_PREVIOUS_PRESET_78FD302C";
 constexpr const char* IconBindID = "KB_TAQUITO_ICON_ACTION_78FD302C";
 constexpr const char* InteractBindID = "KB_TAQUITO_MARKER_INTERACT_78FD302C";
 constexpr unsigned IconResource = IDR_TAQUITO_QUICKACCESS_ICON;
@@ -27,7 +31,32 @@ AddonDefinition_t definition{};
 AddonAPI_t* api = nullptr;
 HMODULE module = nullptr;
 
-void OnToggle(const char*, bool released) { if (!released) QuickMenu::RequestToggle(); }
+void OnToggle(const char*, bool released) { if(!released)QuickMenu::RequestToggle(); }
+void OnRendering(const char*,bool released){ShortcutSettings::Request(ShortcutSettings::ToggleRendering,released);}
+void OnNextPreset(const char*,bool released){ShortcutSettings::Request(ShortcutSettings::NextPreset,released);}
+void OnPreviousPreset(const char*,bool released){ShortcutSettings::Request(ShortcutSettings::PreviousPreset,released);}
+void OnIconToggle(const char*,bool);
+void OnMarkerInteract(const char*,bool);
+Keybind_t LegacyDefault(const AppSettings::Shortcut&old){
+    Keybind_t key{};
+    if(old.key>0&&old.key<256){key.Key=static_cast<uint16_t>(MapVirtualKeyA(static_cast<UINT>(old.key),MAPVK_VK_TO_VSC_EX));key.Alt=old.alt;key.Ctrl=old.ctrl;key.Shift=old.shift;}
+    return key;
+}
+void RegisterShortcuts(){
+    // Defaults seed only previously unknown Nexus IDs; existing Nexus choices always win.
+    api->InputBinds_RegisterWithString(BindID,OnToggle,"ALT+SHIFT+T");
+    api->InputBinds_RegisterWithStruct(RenderBindID,OnRendering,LegacyDefault(AppSettings::Get().shortcuts[0]));
+    api->InputBinds_RegisterWithStruct(NextBindID,OnNextPreset,LegacyDefault(AppSettings::Get().shortcuts[1]));
+    api->InputBinds_RegisterWithStruct(PreviousBindID,OnPreviousPreset,LegacyDefault(AppSettings::Get().shortcuts[2]));
+    api->InputBinds_RegisterWithStruct(IconBindID,OnIconToggle,{});
+    api->InputBinds_RegisterWithString(InteractBindID,OnMarkerInteract,"ALT+F");
+    api->Localization_Set(BindID,"en","Open/Close Quick Menu");
+    api->Localization_Set(RenderBindID,"en","Disable Taquito Rendering");
+    api->Localization_Set(NextBindID,"en","Next Preset");
+    api->Localization_Set(PreviousBindID,"en","Previous Preset");
+    api->Localization_Set(InteractBindID,"en","Interact with Marker");
+    api->Localization_Set(IconBindID,"en","Quick-access Icon");
+}
 void OnIconToggle(const char*,bool released){if(!released)QuickMenu::RequestIconToggle();}
 void OnMarkerInteract(const char*, bool released) { if(!released) MarkerInteractions::RequestInteract(); }
 void OnMumbleIdentityUpdated(void* value) { AppRuntime::SetMumbleIdentity(static_cast<Mumble::Identity*>(value)); }
@@ -51,9 +80,7 @@ void OnLoad(AddonAPI_t* value) {
     QuickMenu::Initialize();
     api->Events_Subscribe(EV_TAQUITO_PATHING_REQUEST,OnPathingRequest);
     api->Textures_GetOrCreateFromResource(IconID, IconResource, module);
-    api->InputBinds_RegisterWithString(BindID, OnToggle, "ALT+SHIFT+T");
-    api->InputBinds_RegisterWithStruct(IconBindID,OnIconToggle,{});
-    api->InputBinds_RegisterWithString(InteractBindID, OnMarkerInteract, "ALT+F");
+    RegisterShortcuts();
     api->Events_Subscribe(EV_MUMBLE_IDENTITY_UPDATED, OnMumbleIdentityUpdated);
     api->QuickAccess_Add(QuickID, IconID, IconID, IconBindID, Name);
     api->QuickAccess_AddContextMenu(PresetsContextID,QuickID,OnQuickAccessMenu);
@@ -65,6 +92,9 @@ void OnUnload() {
     api->QuickAccess_RemoveContextMenu(PresetsContextID);
     api->QuickAccess_Remove(QuickID);
     api->InputBinds_Deregister(BindID);
+    api->InputBinds_Deregister(RenderBindID);
+    api->InputBinds_Deregister(NextBindID);
+    api->InputBinds_Deregister(PreviousBindID);
     api->InputBinds_Deregister(IconBindID);
     api->InputBinds_Deregister(InteractBindID);
     api->Events_Unsubscribe(EV_MUMBLE_IDENTITY_UPDATED, OnMumbleIdentityUpdated);
@@ -90,7 +120,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     definition.Version.Major = 1;
     definition.Version.Minor = 0;
     definition.Version.Build = 1;
-    definition.Version.Revision = 15;
+    definition.Version.Revision = 16;
     definition.Author = "Girbilcannon.8259";
     definition.Description = "Lightweight TacO marker and trail pack viewer.";
     definition.Load = OnLoad;
