@@ -27,11 +27,11 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><OutDir>$(SolutionDir)bin\Release\</OutDir><IntDir>$(SolutionDir)obj\Release\</IntDir><TargetName>Taquito</TargetName></PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><PreprocessorDefinitions>_DEBUG;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions><RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary></ClCompile>
-    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>d3d11.lib;windowscodecs.lib;ole32.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><GenerateMapFile>false</GenerateMapFile><AdditionalDependencies>d3d11.lib;windowscodecs.lib;ole32.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile><WarningLevel>Level4</WarningLevel><FunctionLevelLinking>true</FunctionLevelLinking><IntrinsicFunctions>true</IntrinsicFunctions><SDLCheck>true</SDLCheck><PreprocessorDefinitions>NDEBUG;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions><ConformanceMode>true</ConformanceMode><LanguageStandard>stdcpp20</LanguageStandard><AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions><RuntimeLibrary>MultiThreaded</RuntimeLibrary></ClCompile>
-    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>d3d11.lib;windowscodecs.lib;ole32.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><SubSystem>Windows</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><GenerateMapFile>false</GenerateMapFile><AdditionalDependencies>d3d11.lib;windowscodecs.lib;ole32.lib;shell32.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\Entry.cpp" />
@@ -54,11 +54,14 @@
     <ClInclude Include="src\Core\AppRuntime.h" /><ClInclude Include="src\Core\AppSettings.h" /><ClInclude Include="src\Core\MarkerPack.h" /><ClInclude Include="src\Core\OnlinePacks.h" /><ClInclude Include="src\Core\InstalledPacks.h" />
     <ClInclude Include="src\UI\MarkerInteractions.h" />
     <ClInclude Include="src\Core\MarkerActions.h" />
+    <ClInclude Include="src\Core\AttributeNumbers.h" />
     <ClInclude Include="src\Core\AttributeRuntime.h" />
     <ClInclude Include="src\Core\CheckpointRuntime.h" />
     <ClInclude Include="src\Core\CheckpointAttributes.h" />
     <ClInclude Include="src\Core\AtomicFile.h" />
+    <ClInclude Include="src\Core\AddonLifetime.h" />
     <ClInclude Include="src\UI\HudPlacement.h" />
+    <ClInclude Include="src\UI\PieUITheme.h" />
     <ClInclude Include="src\UI\MapTrailRibbon.h" />
     <ClInclude Include="src\Core\VisualAttributes.h" /><ClInclude Include="src\UI\CategoryMenu.h" />
     <ClInclude Include="src\Core\MapTrailVisuals.h" />

@@ -1,3 +1,4 @@
+#include "AddonLifetime.h"
 #include "Presets.h"
 #include "InstalledPacks.h"
 #include "AtomicFile.h"
@@ -11,10 +12,14 @@
 #include <stdexcept>
 namespace {
 using namespace Presets;
-std::vector<Profile> profiles;Selections normal;
-std::string selected,status;std::filesystem::path folder;
-bool splitStore=false,indexDirty=false,normalDirty=false;std::set<std::string> dirtyProfiles;
-bool enabled=false,writable=true,restoreBaseline=false;uint32_t nextId=1;
+struct RuntimeState {
+    std::vector<Profile> profiles;Selections normal;
+    std::string selected,status;std::filesystem::path folder;
+    bool splitStore=false,indexDirty=false,normalDirty=false;std::set<std::string> dirtyProfiles;
+    bool enabled=false,writable=true,restoreBaseline=false;uint32_t nextId=1;
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [profiles,normal,selected,status,folder,splitStore,indexDirty,normalDirty,dirtyProfiles,enabled,writable,restoreBaseline,nextId]=storage.Get();
 Profile* Find(const std::string&id){for(auto&p:profiles)if(p.id==id)return &p;return nullptr;}
 std::string Filename(const TacoPack::Pack&p){auto s=p.path.filename().u8string();return std::string(reinterpret_cast<const char*>(s.data()),s.size());}
 bool CaptureInto(Selections&target,const std::vector<TacoPack::Pack>&packs){

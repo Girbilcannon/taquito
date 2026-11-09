@@ -1,3 +1,4 @@
+#include "../Core/PieUIBridge.h"
 #include "SettingsWindow.h"
 #include "PackBrowserWindow.h"
 #include "../Core/Presets.h"
@@ -10,6 +11,7 @@
 #include "../Core/CheckpointRuntime.h"
 #include "../TaquitoAPI.h"
 #include "../imgui/imgui.h"
+#include "../imgui/imgui_internal.h"
 #include <Windows.h>
 #include <shellapi.h>
 #include <cmath>
@@ -42,7 +44,6 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
         changed |= ImGui::Checkbox("In-world markers and trails",&settings.world);
         changed |= ImGui::Checkbox("Minimap markers and trails",&settings.mini);
         changed |= ImGui::Checkbox("Full map markers and trails",&settings.big);
-        ImGui::TextWrapped("These display switches affect Taquito only. Pie UI controls its own map visibility.");
         ImGui::Spacing();
         int trailStyle=static_cast<int>(settings.mapTrailStyle);
         if(ImGui::Combo("Map trail style",&trailStyle,"Taco\0Blish HUD\0\0")) {
@@ -89,6 +90,20 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
         ImGui::Spacing();
     }
     if(ImGui::CollapsingHeader("Menu and Appearance")) {
+        const bool piePresent=PieUIBridge::Present();
+        if(!piePresent){ImGui::PushItemFlag(ImGuiItemFlags_Disabled,true);ImGui::PushStyleVar(ImGuiStyleVar_Alpha,ImGui::GetStyle().Alpha*0.5f);}
+        if(ImGui::Checkbox("Enable Pie UI Themes",&settings.pieUIThemes)) {
+            changed=true;
+            if(settings.pieUIThemes)PieUIBridge::RequestThemeRefresh();
+        }
+        if(settings.pieUIThemes) {
+            const float refreshWidth=ImGui::CalcTextSize("Refresh Theme").x+ImGui::GetStyle().FramePadding.x*2;
+            if(ImGui::GetContentRegionAvail().x>=refreshWidth+ImGui::GetStyle().ItemSpacing.x)ImGui::SameLine();
+            if(ImGui::Button("Refresh Theme"))PieUIBridge::RequestThemeRefresh();
+            changed |= ImGui::Checkbox("Auto-refresh Pie UI Themes",&settings.pieUIThemeAutoRefresh);
+        }
+        if(!piePresent){ImGui::PopStyleVar();ImGui::PopItemFlag();}
+        if(!piePresent&&ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("Requires Pie UI to be loaded in Nexus.");
         changed |= ImGui::Checkbox("Quick Close Menu",&settings.quickCloseMenu);
         bool usePresets=settings.presetsEnabled;
         if(ImGui::Checkbox("Enable Presets",&usePresets)&&!loading){settings.presetsEnabled=usePresets;changed=true;}

@@ -1,3 +1,4 @@
+#include "AddonLifetime.h"
 #include "AttributeRuntime.h"
 #include "AtomicFile.h"
 #include "CheckpointRuntime.h"
@@ -9,16 +10,20 @@
 #include <unordered_set>
 
 namespace {
-uint32_t currentMap=0,currentShard=0,currentInstance=0;
-int currentMount=-1;
-std::string currentCharacter,status;
-double utc=0,clockSeconds=0;
-std::filesystem::path stateFile;
-std::unordered_map<std::string,double> timers;
-unsigned batchDepth=0;bool persistenceDirty=false;
-std::unordered_set<std::string> mapState,instanceState;
 struct Animation { bool focused=false;double start=0,returnStart=0;float value=0,returnValue=0; };
-std::unordered_map<const TacoPack::Marker*,Animation> animations;
+struct RuntimeState {
+    uint32_t currentMap=0,currentShard=0,currentInstance=0;
+    int currentMount=-1;
+    std::string currentCharacter,status;
+    double utc=0,clockSeconds=0;
+    std::filesystem::path stateFile;
+    std::unordered_map<std::string,double> timers;
+    unsigned batchDepth=0;bool persistenceDirty=false;
+    std::unordered_set<std::string> mapState,instanceState;
+    std::unordered_map<const TacoPack::Marker*,Animation> animations;
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [currentMap,currentShard,currentInstance,currentMount,currentCharacter,status,utc,clockSeconds,stateFile,timers,batchDepth,persistenceDirty,mapState,instanceState,animations]=storage.Get();
 std::string LowerTrim(std::string text) {
     auto first=text.find_first_not_of(" \t\r\n"),last=text.find_last_not_of(" \t\r\n");
     if(first==std::string::npos)return {};

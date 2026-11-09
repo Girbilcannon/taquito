@@ -17,6 +17,8 @@ namespace AppSettings {
         bool renderingEnabled=true; // Session-only master switch, shared with map consumers.
         bool presetsEnabled=false;
         bool quickCloseMenu=false;
+        bool pieUIThemes=false;
+        bool pieUIThemeAutoRefresh=false;
         std::array<Shortcut,4> shortcuts{}; // Legacy migration defaults only; Nexus owns active keybinds.
         HudPosition infoHud,copyHud;
         NestingStyle nestingStyle = NestingStyle::Taquito;
@@ -33,6 +35,7 @@ namespace AppSettings {
     };
     State& Get();
     void Flush();
+    void Shutdown(); // Drain final saves and close the worker queue before unloading.
     void QueueFileSave(const std::filesystem::path& path,std::string body);
     void QueueSerializedSave(const std::filesystem::path& path,std::function<std::string()> build,size_t maxBytes=(std::numeric_limits<size_t>::max)());
     bool SaveFailed(const std::filesystem::path& path);

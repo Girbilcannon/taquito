@@ -1,5 +1,6 @@
 #pragma once
 #include "AttributeRuntime.h"
+#include "AttributeNumbers.h"
 #include <charconv>
 #include <cmath>
 #include <unordered_set>
@@ -19,7 +20,7 @@ inline std::vector<std::string> Guids(const std::string& text,bool& invalid) {
     }while(start<=text.size());return result;
 }
 inline bool Number(const std::string& text,float& result) {
-    auto value=Trim(text);try {size_t used=0;result=std::stof(value,&used);return used==value.size()&&std::isfinite(result);}catch(...){return false;}
+    return AttributeNumbers::Float(text,result);
 }
 inline void Populate(TacoPack::Style& style) {
     auto get=[&](const char* key)->const std::string* {auto it=style.attributes.find(key);return it==style.attributes.end()?nullptr:&it->second;};

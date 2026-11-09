@@ -1,3 +1,4 @@
+#include "AddonLifetime.h"
 #include "AppSettings.h"
 #include "InstalledPacks.h"
 #include "AtomicFile.h"
@@ -13,15 +14,14 @@
 #include <set>
 
 namespace {
-AppSettings::State state;
 using Choices=std::map<std::string,std::map<std::string,bool>>;
-Choices cachedChoices;std::filesystem::path cachedDirectory;bool cacheReady=false,cacheWritable=true;
 // The worker serializes owned snapshots; it never reads live settings or pack pointers.
 class SettingsWriter {
     std::mutex mutex;std::condition_variable cv;std::thread worker;
     struct Job{std::function<std::string()> build;size_t maxBytes;};
     std::map<std::filesystem::path,Job> pending;std::map<std::filesystem::path,std::string> written;bool busy=false,stop=false;
     std::set<std::filesystem::path> failed;
+    bool closed=false;
     void Run(){
         std::unique_lock lock(mutex);
         for(;;){cv.wait(lock,[&]{return stop||!pending.empty();});if(stop&&pending.empty())break;
@@ -37,28 +37,46 @@ class SettingsWriter {
         }
     }
 public:
-    ~SettingsWriter(){Flush();}
+    ~SettingsWriter(){Shutdown();}
     bool Failed(const std::filesystem::path&path){std::lock_guard lock(mutex);return failed.count(path)!=0;}
     void Queue(const std::filesystem::path&path,std::function<std::string()> build,size_t maxBytes){
-        std::lock_guard lock(mutex);pending[path]={std::move(build),maxBytes};
+        std::lock_guard lock(mutex);if(closed)return;pending[path]={std::move(build),maxBytes};
         if(!worker.joinable()){stop=false;worker=std::thread([this]{Run();});}cv.notify_all();
     }
     void Flush(){
         std::unique_lock lock(mutex);if(!worker.joinable())return;
         cv.wait(lock,[&]{return pending.empty()&&!busy;});stop=true;cv.notify_all();lock.unlock();worker.join();written.clear();
     }
+    void Shutdown(){
+        // Close the queue before draining it, so late work cannot restart a
+        // writer while the addon is being unloaded. Never called from DllMain.
+        {std::lock_guard lock(mutex);closed=true;stop=true;cv.notify_all();}
+        if(worker.joinable())worker.join();
+        written.clear();
+    }
+    void Resume(){std::lock_guard lock(mutex);closed=false;}
 };
-SettingsWriter writer;
+struct RuntimeState {
+    AppSettings::State state;
+    Choices cachedChoices;std::filesystem::path cachedDirectory;bool cacheReady=false,cacheWritable=true;
+    SettingsWriter writer; // Destroy/drain this before its snapshots and settings cache.
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [state,cachedChoices,cachedDirectory,cacheReady,cacheWritable,writer]=storage.Get();
 }
 void AppSettings::Flush(){writer.Flush();}
+void AppSettings::Shutdown(){writer.Shutdown();}
 void AppSettings::QueueFileSave(const std::filesystem::path&path,std::string body){QueueSerializedSave(path,[body=std::move(body)]{return body;});}
 void AppSettings::QueueSerializedSave(const std::filesystem::path&path,std::function<std::string()> build,size_t maxBytes){writer.Queue(path,std::move(build),maxBytes);}
 bool AppSettings::SaveFailed(const std::filesystem::path&path){return writer.Failed(path);}
 AppSettings::State& AppSettings::Get() { return state; }
 void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoPack::Pack>& packs) {
     Flush();
+    writer.Resume();
     // Missing option in older settings is an explicit opt-out on upgrade/reload.
     state.autoTriggerPieUIMaps=false;
+    state.pieUIThemes=false;
+    state.pieUIThemeAutoRefresh=false;
     state.presetsEnabled=false;state.quickCloseMenu=false;state.shortcuts={};
     std::ifstream fileInput(directory / "settings.txt");
     // Filename aliases keep category toggles when a tracked pack changes its catalog filename.
@@ -122,6 +140,8 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
             else if (kind == "playerBubble") state.playerBubble = value;
             else if (kind == "presetsEnabled") state.presetsEnabled=value;
             else if (kind == "quickCloseMenu") state.quickCloseMenu=value;
+            else if (kind == "pieUIThemes") state.pieUIThemes=value;
+            else if (kind == "pieUIThemeAutoRefresh") state.pieUIThemeAutoRefresh=value;
             else if (kind == "showMarkerInfo") state.showMarkerInfo = value;
             else if (kind == "autoTriggerPieUIMaps") state.autoTriggerPieUIMaps = value;
         }
@@ -175,6 +195,8 @@ void AppSettings::Save(const std::filesystem::path& directory, const std::vector
     output << "mapTrailStyle " << static_cast<int>(settings.mapTrailStyle) << '\n';
     output << "clipboardMode " << static_cast<int>(settings.clipboardMode) << "\nshowMarkerInfo " << settings.showMarkerInfo << '\n';
     output << "autoTriggerPieUIMaps " << settings.autoTriggerPieUIMaps << '\n';
+    output << "pieUIThemes " << settings.pieUIThemes << '\n';
+    output << "pieUIThemeAutoRefresh " << settings.pieUIThemeAutoRefresh << '\n';
     output << "world " << settings.world << "\nmini " << settings.mini << "\nbig " << settings.big << '\n';
     output << "miniIconSize " << settings.miniIconSize << "\nminiTrailSize " << settings.miniTrailSize << '\n';
     output << "bigIconSize " << settings.bigIconSize << "\nbigTrailSize " << settings.bigTrailSize << '\n';

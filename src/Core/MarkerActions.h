@@ -1,6 +1,7 @@
 #pragma once
 #include "MarkerPack.h"
 #include "CheckpointAttributes.h"
+#include "AttributeNumbers.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -14,12 +15,8 @@ inline void Populate(TacoPack::Style& style) {
         return it==style.attributes.end() ? std::string{} : it->second;
     };
     auto number=[&](const char* name,float fallback) {
-        const auto text=value(name);
-        try {
-            size_t end=0;float n=std::stof(text,&end);
-            if(text.find_first_not_of(" \t\r\n",end)==std::string::npos && std::isfinite(n)) return n;
-        } catch(...) {}
-        return fallback;
+        const auto it=style.attributes.find(name);
+        return it==style.attributes.end() ? fallback : AttributeNumbers::FloatOr(it->second,fallback);
     };
     auto boolean=[&](const char* name,bool fallback) {
         auto text=value(name);text.erase(0,text.find_first_not_of(" \t\r\n"));

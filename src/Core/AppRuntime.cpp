@@ -1,3 +1,4 @@
+#include "AddonLifetime.h"
 #include "AppRuntime.h"
 #include <atomic>
 #include <vector>
@@ -6,8 +7,12 @@ namespace {
 AddonAPI_t* api = nullptr;
 Mumble::Data* mumble = nullptr;
 std::atomic<Mumble::Identity*> identity{nullptr};
-std::filesystem::path addonDirectory;
-std::filesystem::path packsDirectory;
+struct RuntimeState {
+    std::filesystem::path addonDirectory;
+    std::filesystem::path packsDirectory;
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [addonDirectory,packsDirectory]=storage.Get();
 }
 
 void AppRuntime::Initialize(AddonAPI_t* value, HMODULE addonModule) {

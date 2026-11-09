@@ -85,11 +85,14 @@
     <ClInclude Include="src\Core\InstalledPacks.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\UI\MarkerInteractions.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="src\Core\MarkerActions.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\Core\AttributeNumbers.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\Core\AttributeRuntime.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\Core\CheckpointRuntime.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\Core\CheckpointAttributes.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\Core\AtomicFile.h"><Filter>Core</Filter></ClInclude>
+    <ClInclude Include="src\Core\AddonLifetime.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\UI\HudPlacement.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="src\UI\PieUITheme.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="src\UI\MapTrailRibbon.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="src\Core\VisualAttributes.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\Core\MapTrailVisuals.h"><Filter>Core</Filter></ClInclude>

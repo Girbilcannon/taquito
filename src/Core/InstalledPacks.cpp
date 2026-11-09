@@ -140,3 +140,64 @@ bool InstalledPacks::HasNewerRelease(const Record& installed,const OnlinePacks::
     if(!numeric && !available.version.empty() && available.version!=installed.version) return true;
     return available.filename!=installed.filename || available.downloadUrl!=installed.downloadUrl;
 }
+void InstalledPacks::Reconcile(const std::filesystem::path& directory,
+                              const std::vector<Record>& records,std::vector<OnlinePacks::Entry>& entries) {
+    const auto present=[&](const std::string& filename) {
+        if(!SafeFilename(filename)) return false;
+        std::error_code ec;
+        return std::filesystem::is_regular_file(directory/filename,ec) && !ec;
+    };
+    for(auto& entry:entries) {
+        entry.installedFilename.clear(); entry.installedVersion.clear();
+        if(present(entry.filename)) entry.installedFilename=entry.filename;
+    }
+    for(const auto& record:records) {
+        if(!present(record.filename)) continue;
+        const auto* matched=Match(record,entries);
+        if(!matched) continue;
+        auto& entry=entries[static_cast<size_t>(matched-entries.data())];
+        // An exact catalog file takes precedence over a separately installed old release.
+        if(!entry.installedFilename.empty() && Lower(entry.installedFilename)!=Lower(record.filename)) continue;
+        entry.installedFilename=record.filename;
+        entry.installedVersion=record.version;
+    }
+}
+bool InstalledPacks::Remove(const std::filesystem::path& directory,const std::filesystem::path& manifest,
+                            const std::string& filename,std::string& result) {
+    if(!SafeFilename(filename)) { result="Invalid pack filename; no files were removed."; return false; }
+    if(!IsValid(manifest)) { result="Pack version file is invalid; no files were removed."; return false; }
+    auto records=Load(manifest);
+    const auto oldCount=records.size();
+    records.erase(std::remove_if(records.begin(),records.end(),[&](const auto& r){
+        return Lower(r.filename)==Lower(filename);
+    }),records.end());
+    const auto target=directory/filename;
+    auto backup=target; backup+=".taquito-remove";
+    std::error_code ec;
+    const bool exists=std::filesystem::exists(target,ec);
+    if(ec) { result="Could not inspect the pack; no files were removed."; return false; }
+    if(exists) {
+        if(!std::filesystem::is_regular_file(target,ec) || ec) {
+            result="Pack path is not a regular file; nothing was removed."; return false;
+        }
+        if(std::filesystem::exists(backup,ec) || ec) {
+            result="An earlier removal backup exists; no files were removed."; return false;
+        }
+        std::filesystem::rename(target,backup,ec);
+        if(ec) { result="Could not remove the pack. Check file permissions and try again."; return false; }
+    }
+    if(records.size()!=oldCount && !Save(manifest,records)) {
+        if(exists) {
+            std::filesystem::rename(backup,target,ec);
+            result=ec ? "Could not save pack versions. Restore the .taquito-remove backup before reloading packs."
+                      : "Could not save pack versions; the pack was restored.";
+        } else result="Could not clear the pack version record.";
+        return false;
+    }
+    if(exists) {
+        std::filesystem::remove(backup,ec);
+        if(ec) { result="Removed from Taquito; the .taquito-remove backup could not be deleted."; return true; }
+    }
+    result="Removed from Taquito.";
+    return true;
+}

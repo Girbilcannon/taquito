@@ -1,3 +1,4 @@
+#include "AddonLifetime.h"
 #include "CheckpointRuntime.h"
 #include "AttributeRuntime.h"
 #include <algorithm>
@@ -40,13 +41,17 @@ struct SavedRun {
     std::map<std::string,std::vector<std::string>>forks;
     std::map<std::string,std::string>choices;
 };
-std::map<std::pair<std::string,std::string>,SavedRun>savedRuns;
-std::vector<Graph> graphs;
-std::unordered_map<const Marker*,size_t> markerPacks;
-std::unordered_map<const void*,uint32_t> paint;
-std::unordered_map<uint32_t,std::vector<std::pair<size_t,size_t>>> mapRuns;
-uint32_t lastMap=0;bool lastActive=false;TacoPack::Vec3 previousPlayer;
-uint64_t contactsPassed=0,resets=0;
+struct RuntimeState {
+    std::map<std::pair<std::string,std::string>,SavedRun>savedRuns;
+    std::vector<Graph> graphs;
+    std::unordered_map<const Marker*,size_t> markerPacks;
+    std::unordered_map<const void*,uint32_t> paint;
+    std::unordered_map<uint32_t,std::vector<std::pair<size_t,size_t>>> mapRuns;
+    uint32_t lastMap=0;bool lastActive=false;TacoPack::Vec3 previousPlayer;
+    uint64_t contactsPassed=0,resets=0;
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [savedRuns,graphs,markerPacks,paint,mapRuns,lastMap,lastActive,previousPlayer,contactsPassed,resets]=storage.Get();
 double Distance2(TacoPack::Vec3 a,TacoPack::Vec3 b) {
     const double x=static_cast<double>(a.x)-b.x,y=static_cast<double>(a.y)-b.y,z=static_cast<double>(a.z)-b.z;
     return x*x+y*y+z*z;

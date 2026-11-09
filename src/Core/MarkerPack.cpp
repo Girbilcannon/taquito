@@ -1,6 +1,7 @@
 #include "MarkerPack.h"
 #include "MarkerActions.h"
 #include "AttributeRuntime.h"
+#include "AttributeNumbers.h"
 #define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
 #define MINIZ_HEADER_FILE_ONLY
 #include "../third_party/miniz.c"
@@ -27,9 +28,9 @@ std::string Slash(std::string s) { std::replace(s.begin(), s.end(), '\\', '/'); 
 bool Safe(const std::string& s) { return !s.empty() && s.front() != '/' && s.find(':') == std::string::npos && s.find("..") == std::string::npos; }
 bool Eq(const char* a, const char* b) { return Lower(a) == Lower(b); }
 std::string A(Node* n, const char* key) { if (!n) return {}; for (Attr* a = n->first_attribute(); a; a = a->next_attribute()) if (Eq(a->name(), key)) return a->value(); return {}; }
-float Number(const std::string& text, float fallback) { auto s=Trim(text); if(s.empty()) return fallback; try { size_t used=0; float f=std::stof(s,&used); return used==s.size() && std::isfinite(f) ? f : fallback; } catch (...) { return fallback; } }
+float Number(const std::string& text, float fallback) { return AttributeNumbers::FloatOr(text,fallback); }
 float F(Node* n, const char* key, float fallback) { return Number(A(n,key),fallback); }
-uint32_t U(Node* n, const char* key) { auto s = A(n, key); try { return static_cast<uint32_t>(std::stoul(s)); } catch (...) { return 0; } }
+uint32_t U(Node* n, const char* key) { uint32_t result=0; AttributeNumbers::Unsigned(A(n,key),result); return result; }
 bool B(Node* n, const char* key, bool fallback) { auto s = Lower(Trim(A(n, key))); if (s.empty()) return fallback; if (s == "0" || s == "false") return false; if (s == "1" || s == "true") return true; return fallback; }
 uint32_t Color(const std::string& text, uint32_t fallback) {
     auto hex=Trim(text); if(hex.empty()) return fallback;
@@ -38,12 +39,11 @@ uint32_t Color(const std::string& text, uint32_t fallback) {
     if (hex.size() == 3) hex = {hex[0], hex[0], hex[1], hex[1], hex[2], hex[2]};
     if (hex.size() != 6 && hex.size() != 8) return fallback;
     if (!std::all_of(hex.begin(),hex.end(),[](unsigned char c){ return std::isxdigit(c) != 0; })) return fallback;
-    try {
-        const auto value=static_cast<uint32_t>(std::stoul(hex,nullptr,16));
-        if(hex.size()==6) return (value<<8)|0xFFu;
-        // TacO writes bare AARRGGBB. Preserve Taquito's existing #RRGGBBAA form.
-        return prefixed ? value : (value<<8)|(value>>24);
-    } catch (...) { return fallback; }
+    uint32_t value=0;
+    if(!AttributeNumbers::Unsigned(hex,value,16)) return fallback;
+    if(hex.size()==6) return (value<<8)|0xFFu;
+    // TacO writes bare AARRGGBB. Preserve Taquito's existing #RRGGBBAA form.
+    return prefixed ? value : (value<<8)|(value>>24);
 }
 void Apply(Style& st, Node* n) {
     // Preserve every XML attribute, including attributes used by other pathing tools.
@@ -232,10 +232,11 @@ void Entries(Pack& pack, mz_zip_archive& zip, const ZipIndex& index, Node* root,
                 if (first) found->second = NearCategory(pack, type);
                 cat = found->second;
                 if (!cat) {
-                    // TacO accepts entries without a matching category; still read their data.
+                    // Keep orphan data for diagnostics, but never render an
+                    // entry which has no category checkbox to control it.
                     cat = ClosestAncestor(pack, type);
                     const auto message = "Missing category: " + (type.empty() ? std::string("(unnamed entry)") : type) +
-                        (cat ? " (rendered under " + cat->key + ")" : " (rendered without a category)");
+                        (cat ? " (rendered under " + cat->key + ")" : " (not rendered: no category)");
                     if (std::find(pack.diagnostics.begin(),pack.diagnostics.end(),message)==pack.diagnostics.end())
                         pack.diagnostics.push_back(message);
                 }
@@ -341,7 +342,7 @@ bool ExtractAsset(const std::filesystem::path& archive, const std::string& name,
     bool ok = idx >= 0 && Read(zip, static_cast<mz_uint>(idx), bytes, limit);
     mz_zip_reader_end(&zip); return ok;
 }
-bool IsVisible(const Category* c) { for (; c; c = c->parent) if (!c->visible) return false; return true; }
+bool IsVisible(const Category* c) { if(!c)return false;for (; c; c = c->parent) if (!c->visible) return false; return true; }
 bool HasLua(const Style& style) {
     for(const char* key:{"script-filter","script-tick","script-focus","script-trigger","script-once"}) {
         auto value=style.attributes.find(key);

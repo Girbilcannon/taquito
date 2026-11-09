@@ -1,3 +1,4 @@
+#include "AddonLifetime.h"
 #include "PathingState.h"
 #include "../TaquitoAPI.h"
 #include "../third_party/jsonxx.h"
@@ -6,15 +7,19 @@
 #include <mutex>
 
 namespace {
-std::mutex mutex;
-PathingState::RaiseEvent raiseEvent=nullptr;
-std::string lastBody,lastJson;
-uint64_t revision=0;
-uint64_t raisedEvents=0,receivedRequests=0;
-size_t publishedPacks=0;
-size_t readablePacks=0;
-bool snapshotReady=false;
-bool active=false;
+struct RuntimeState {
+    std::mutex mutex;
+    PathingState::RaiseEvent raiseEvent=nullptr;
+    std::string lastBody,lastJson;
+    uint64_t revision=0;
+    uint64_t raisedEvents=0,receivedRequests=0;
+    size_t publishedPacks=0;
+    size_t readablePacks=0;
+    bool snapshotReady=false;
+    bool active=false;
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [mutex,raiseEvent,lastBody,lastJson,revision,raisedEvents,receivedRequests,publishedPacks,readablePacks,snapshotReady,active]=storage.Get();
 std::string Utf8(const std::filesystem::path& path) {
     const auto text=path.u8string();
     return std::string(reinterpret_cast<const char*>(text.data()),text.size());
@@ -56,7 +61,12 @@ void PathingState::Update(const std::vector<TacoPack::Pack>& packs,const AppSett
     root.import("ready",jsonxx::Value(ready));
     root.import("renderingEnabled",jsonxx::Value(settings.renderingEnabled));
     root.import("packsDir",jsonxx::Value(Absolute(directory)));
-    // Native rendering switches stay local; consumers control their own map widgets.
+    // Raw user checkbox values, independent of master pause and future map routing.
+    // This controls Taquito pack overlays, never the consumer's map widget itself.
+    jsonxx::Object mapVisibility;
+    mapVisibility.import("minimap",jsonxx::Value(settings.mini));
+    mapVisibility.import("worldMap",jsonxx::Value(settings.big));
+    root.import("mapVisibility",jsonxx::Value(mapVisibility));
     // Optional schema-1 extension: dimensionless user multipliers, independent of visibility.
     const auto multiplier=[](float value) {
         return std::isfinite(value) ? std::clamp(value,0.25f,3.0f) : 1.0f;

@@ -1,12 +1,22 @@
 #include "PieUIBridge.h"
+#include "AddonLifetime.h"
+#include "../third_party/jsonxx.h"
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
+#include <algorithm>
+#include <cstring>
 
 namespace {
 std::atomic<PieUIBridge::RaiseEvent> sender{nullptr};
 std::atomic_bool present{false};
+std::atomic_uint mapOwnership{0}; // bit 0: hidden native compass; bit 1: Pie UI world map.
+std::atomic_bool themeRefreshRequested{false};
 double lastProbe=-1;
+struct ThemeState { std::mutex mutex; PieUIBridge::Theme palette; };
+AddonLifetime::Storage<ThemeState> themeStorage;
+void ClearTheme(){auto& s=themeStorage.Get();std::lock_guard lock(s.mutex);s.palette={};}
 int Base64(char c) {
     if(c>='A'&&c<='Z')return c-'A';
     if(c>='a'&&c<='z')return c-'a'+26;
@@ -14,16 +24,66 @@ int Base64(char c) {
     return c=='+'?62:c=='/'?63:-1;
 }
 }
-void PieUIBridge::Initialize(RaiseEvent raise){sender.store(raise);present.store(false);lastProbe=-1;}
-void PieUIBridge::Shutdown(){sender.store(nullptr);present.store(false);lastProbe=-1;}
-void PieUIBridge::OnReady(void*){if(sender.load())present.store(true);}
-void PieUIBridge::Probe(){
-    present.store(false);
-    if(auto send=sender.load())send(PingEvent,nullptr);
+void PieUIBridge::Initialize(RaiseEvent raise){sender.store(raise);present.store(false);mapOwnership.store(0);themeRefreshRequested.store(false);lastProbe=-1;ClearTheme();}
+void PieUIBridge::Shutdown(){sender.store(nullptr);present.store(false);mapOwnership.store(0);themeRefreshRequested.store(false);lastProbe=-1;ClearTheme();}
+void PieUIBridge::RequestThemeRefresh(){if(Present())themeRefreshRequested.store(true);}
+void PieUIBridge::OnTheme(void* value){
+    if(!sender.load()||!value)return;
+    // Read and validate the header before touching the fixed-capacity color array.
+    uint32_t header[3];std::memcpy(header,value,sizeof(header));
+    if(header[0]!=1 || !header[2] || header[2]>96)return;
+    Theme copy;copy.accent=header[1];copy.count=header[2];
+    std::memcpy(copy.colors.data(),static_cast<const unsigned char*>(value)+sizeof(header),copy.count*sizeof(uint32_t));
+    auto& s=themeStorage.Get();std::lock_guard lock(s.mutex);s.palette=copy;
 }
-void PieUIBridge::Poll(double now){
+PieUIBridge::Theme PieUIBridge::GetTheme(){
+    auto& s=themeStorage.Get();std::lock_guard lock(s.mutex);return s.palette;
+}
+void PieUIBridge::OnReady(void*){if(sender.load())present.store(true);}
+void PieUIBridge::OnNativeCompass(void* value){
+    if(!sender.load()||!value)return;
+    const auto* text=static_cast<const char*>(value);
+    size_t size=0;while(size<4096&&text[size])++size;
+    if(!size||size==4096)return;
+    jsonxx::Object state;
+    if(!state.parse(std::string(text,size))||!state.has<jsonxx::Number>("schema")||state.get<jsonxx::Number>("schema")!=1||
+       !state.has<jsonxx::String>("source")||state.get<jsonxx::String>("source")!="Pie UI"||!state.has<jsonxx::Boolean>("active"))return;
+    if(!state.get<jsonxx::Boolean>("active")){mapOwnership.store(0);present.store(false);ClearTheme();return;}
+    if(!state.has<jsonxx::Boolean>("nativeCompassHidden"))return;
+    unsigned owned=state.get<jsonxx::Boolean>("nativeCompassHidden")?1u:0u;
+    // Older compass-only providers retain local full-map rendering. Unknown
+    // or missing selections likewise default to native on each complete state.
+    if(state.has<jsonxx::String>("worldMap")&&state.get<jsonxx::String>("worldMap")=="pieui")owned|=2u;
+    mapOwnership.store(owned);present.store(true);
+}
+PieUIBridge::MapOwnership PieUIBridge::GetMapOwnership(){
+    const auto owned=mapOwnership.load();return {(owned&1u)!=0,(owned&2u)!=0};
+}
+void PieUIBridge::Probe(bool refreshTheme){
+    const bool wasPresent=present.load();
+    present.store(false);
+    // Both documented requests reply synchronously. Clear stale ownership first
+    // so a missing/unloaded provider cannot leave native rendering suppressed.
+    mapOwnership.store(0);
+    if(auto send=sender.load()){
+        send(PingEvent,nullptr);
+        send(NativeCompassRequestEvent,nullptr);
+        // Refresh an existing cache when requested, before Taquito pushes any colors.
+        if(present.load()&&(refreshTheme||!wasPresent))send(ThemeRequestEvent,nullptr);
+    }
+    if(!present.load())ClearTheme();
+}
+void PieUIBridge::Poll(double now,bool refreshTheme){
     if(!std::isfinite(now))return;
-    if(lastProbe<0||now<lastProbe||now-lastProbe>=1){lastProbe=now;Probe();}
+    const bool manual=themeRefreshRequested.exchange(false);
+    if(lastProbe<0||now<lastProbe||now-lastProbe>=1){
+        lastProbe=now;
+        // Pull again even with a cached palette: not every provider build
+        // broadcasts each in-session theme/trim change. Request before the
+        // UI pushes our scoped colors, and never hold the palette lock here.
+        Probe(refreshTheme||manual);
+    }
+    else if(manual&&Present())if(auto send=sender.load())send(ThemeRequestEvent,nullptr);
 }
 bool PieUIBridge::Present(){return sender.load()!=nullptr&&present.load();}
 std::string PieUIBridge::MapLink(const std::string&text){

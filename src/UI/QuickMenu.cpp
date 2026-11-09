@@ -1,3 +1,5 @@
+#include "PieUITheme.h"
+#include "../Core/AddonLifetime.h"
 #include "QuickMenu.h"
 #include "CategoryMenu.h"
 #include "OverlayRenderer.h"
@@ -12,6 +14,7 @@
 #include "../Core/MarkerPack.h"
 #include "../Core/OnlinePacks.h"
 #include "../Core/PathingState.h"
+#include "../Core/PieUIBridge.h"
 #include "../Core/AttributeRuntime.h"
 #include "../Core/CheckpointRuntime.h"
 #include "../third_party/jsonxx.h"
@@ -25,18 +28,23 @@
 #include <vector>
 
 namespace {
-Renderer renderer;
-std::vector<TacoPack::Pack> packs;
-std::atomic_bool toggleRequested{false},iconToggleRequested{false};
-bool leftCycleSeen=false,menuAtLeftPress=false;int lastLeftReleaseFrame=-100;
-AppSettings::State lastSharedSettings;
-bool showMenu = false;
-std::thread loader;
-std::mutex loadMutex;
-std::optional<std::vector<TacoPack::Pack>> loadedPacks;
-std::atomic_bool loading{false};
-bool packsReady=false;
-std::vector<InstalledPacks::Record> packCatalog;
+struct RuntimeState {
+    Renderer renderer;
+    std::vector<TacoPack::Pack> packs;
+    std::atomic_bool toggleRequested{false},iconToggleRequested{false};
+    bool leftCycleSeen=false,menuAtLeftPress=false;int lastLeftReleaseFrame=-100;
+    AppSettings::State lastSharedSettings;
+    bool showMenu = false;
+    std::thread loader;
+    std::mutex loadMutex;
+    std::optional<std::vector<TacoPack::Pack>> loadedPacks;
+    std::atomic_bool loading{false};
+    bool packsReady=false;
+    std::vector<InstalledPacks::Record> packCatalog;
+    std::wstring lastIdentity;std::string character;
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [renderer,packs,toggleRequested,iconToggleRequested,leftCycleSeen,menuAtLeftPress,lastLeftReleaseFrame,lastSharedSettings,showMenu,loader,loadMutex,loadedPacks,loading,packsReady,packCatalog,lastIdentity,character]=storage.Get();
 
 void PublishPathingState() {
     PathingState::Update(packs,AppSettings::Get(),AppRuntime::GetPacksDirectory(),packCatalog,packsReady);
@@ -54,7 +62,7 @@ void Save() {
     }
     AppSettings::Save(AppRuntime::GetAddonDirectory(),{});
     const auto&s=AppSettings::Get();const auto&old=lastSharedSettings;
-    if(s.renderingEnabled!=old.renderingEnabled||s.miniIconSize!=old.miniIconSize||s.miniTrailSize!=old.miniTrailSize||
+    if(s.renderingEnabled!=old.renderingEnabled||s.mini!=old.mini||s.big!=old.big||s.miniIconSize!=old.miniIconSize||s.miniTrailSize!=old.miniTrailSize||
        s.bigIconSize!=old.bigIconSize||s.bigTrailSize!=old.bigTrailSize)PublishPathingState();
 }
 void PresetChanged(){ResetSelectionContact();CategoryChanged();}
@@ -176,10 +184,28 @@ void QuickMenu::Initialize() {
     CheckpointRuntime::Clear();
     renderer.Initialize(api); Refresh();
 }
-void QuickMenu::Shutdown() { CheckpointRuntime::Clear(); OnlinePacks::Stop(); if (loader.joinable()) loader.join(); Save(); CategoryChanged(); AppSettings::Flush(); MarkerInteractions::Reset(); renderer.Shutdown(); packs.clear(); showMenu = false; PackBrowserWindow::Close(); SettingsWindow::Close(); PresetsWindow::Close();Presets::Clear();ShortcutSettings::Reset(); { std::lock_guard lock(loadMutex); loadedPacks.reset(); } }
+void QuickMenu::Shutdown() {
+    // Nexus callbacks have been removed and drained before any state is freed.
+    OnlinePacks::Stop();
+    if(loader.joinable())loader.join();
+    if(packsReady&&Presets::Enabled()){Presets::Capture(packs);Presets::Save();}
+    AppSettings::Save(AppRuntime::GetAddonDirectory(),packs);
+    AppSettings::Shutdown();
+    // Do not use CategoryChanged here: unloading must not publish an active
+    // snapshot again or change presets after the final save has been queued.
+    MarkerInteractions::Reset();CheckpointRuntime::Clear();AttributeRuntime::ResetFocus();
+    renderer.Shutdown();packs.clear();packCatalog.clear();packsReady=false;loading=false;
+    showMenu=false;toggleRequested=false;iconToggleRequested=false;
+    lastIdentity.clear();character.clear();
+    PackBrowserWindow::Close();SettingsWindow::Close();PresetsWindow::Close();
+    Presets::Clear();ShortcutSettings::Reset();
+    {std::lock_guard lock(loadMutex);loadedPacks.reset();}
+}
 void QuickMenu::RequestToggle() { toggleRequested.store(true, std::memory_order_release); }
 void QuickMenu::RequestIconToggle(){iconToggleRequested.store(true,std::memory_order_release);}
 void QuickMenu::Render() {
+    PieUIBridge::Poll(ImGui::GetTime(),AppSettings::Get().pieUIThemes&&AppSettings::Get().pieUIThemeAutoRefresh);
+    PieUITheme::Scope theme(AppSettings::Get().pieUIThemes);
     if(OnlinePacks::ConsumeReloadRequest()) Refresh();
     ReceivePacks();
     auto& settings = AppSettings::Get();
@@ -194,7 +220,7 @@ void QuickMenu::Render() {
     if(packsReady&&((shortcut.actions&2u&&Presets::Step(1,packs))||(shortcut.actions&4u&&Presets::Step(-1,packs)))){PresetChanged();}
     if(shortcutsChanged)Save();
     auto* playableMumble=AppRuntime::GetPlayableMumble();
-    static std::wstring lastIdentity;static std::string character;
+
     if(playableMumble) {
         const auto* raw=playableMumble->Identity;size_t length=0;while(length<256 && raw[length])++length;
         std::wstring identity(raw,length);
@@ -217,8 +243,10 @@ void QuickMenu::Render() {
     const bool checkpointContact=playableMumble && settings.renderingEnabled && settings.world && playableMumble->Context.IsGameFocused &&
         !playableMumble->Context.IsMapOpen && !playableMumble->Context.IsTextboxFocused && !ImGui::GetIO().WantTextInput;
     CheckpointRuntime::UpdateContact(playableMumble ? playableMumble->Context.MapID : 0,player,checkpointContact);
+    const auto mapOwner=PieUIBridge::GetMapOwnership();
     renderer.Draw(packs, playableMumble, AppRuntime::GetMumbleIdentity(),
-                  settings.renderingEnabled&&settings.world, settings.renderingEnabled&&settings.mini, settings.renderingEnabled&&settings.big, settings.miniIconSize, settings.bigIconSize,
+                  settings.renderingEnabled&&settings.world, settings.renderingEnabled&&settings.mini&&!mapOwner.minimap,
+                  settings.renderingEnabled&&settings.big&&!mapOwner.worldMap, settings.miniIconSize, settings.bigIconSize,
                   settings.miniTrailSize, settings.bigTrailSize,
                   settings.worldIconSize, settings.worldTrailSize,
                   settings.playerBubble, settings.bubbleRadius, settings.bubbleFeather,

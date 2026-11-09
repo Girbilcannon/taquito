@@ -1,3 +1,4 @@
+#include "AddonLifetime.h"
 #include "OnlinePacks.h"
 #include "InstalledPacks.h"
 #include "AppRuntime.h"
@@ -11,6 +12,7 @@
 #include <atomic>
 #include <cctype>
 #include <condition_variable>
+#include <chrono>
 #include <fstream>
 #include <mutex>
 #include <thread>
@@ -21,18 +23,24 @@ namespace OnlinePacks {
 namespace {
 constexpr wchar_t CatalogUrl[] = L"https://mp-repo.blishhud.com/repo.json";
 constexpr size_t MaxCatalog = 4 * 1024 * 1024, MaxArchive = 128 * 1024 * 1024;
-std::filesystem::path directory;
-std::vector<Entry> entries;
-std::string status;
-std::string updateStatus;
-std::mutex mutex;
-std::condition_variable wake;
-std::thread worker;
-std::atomic_bool reloadRequested{false};
-bool stopping = false, loading = false, updateQueued = false;
-enum class Kind { Catalog, Description, Archive, CheckUpdates };
-struct Job { Kind kind; std::string id; };
-std::vector<Job> jobs;
+enum class Kind { Catalog, Description, Archive, CheckUpdates, Reconcile, Remove };
+struct Job { Kind kind; std::string id; std::string filename; };
+struct RuntimeState {
+    std::filesystem::path directory;
+    std::vector<Entry> entries;
+    std::string status;
+    std::string updateStatus;
+    std::mutex mutex;
+    std::condition_variable wake;
+    std::thread worker;
+    std::atomic_bool reloadRequested{false};
+    bool stopping = false, loading = false, updateQueued = false;
+    std::vector<Job> jobs;
+    bool reconcileQueued=false;
+    std::chrono::steady_clock::time_point nextReconcile{};
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [directory,entries,status,updateStatus,mutex,wake,worker,reloadRequested,stopping,loading,updateQueued,jobs,reconcileQueued,nextReconcile]=storage.Get();
 
 std::wstring Wide(const std::string& s) {
     if (s.empty()) return {};
@@ -169,8 +177,7 @@ void FetchCatalog(bool keepLoading=false) {
         found.push_back(std::move(item));
     }
     const auto installed=InstalledPacks::Load(AppRuntime::GetAddonDirectory()/"installed-packs.json");
-    for(auto& item:found) for(const auto& record:installed)
-        if(record.filename==item.filename) { item.installedVersion=record.version; break; }
+    InstalledPacks::Reconcile(directory,installed,found);
     std::lock_guard lock(mutex);
     entries=std::move(found);
     status=entries.empty() ? "The catalog contains no supported packs." :
@@ -258,15 +265,43 @@ bool Install(const Entry& selected, bool automatic, std::string& result,
     std::filesystem::remove(temporary,ec);
     return result=="Updated in TacoPacks." || result=="Downloaded into TacoPacks.";
 }
+void ReconcileInstalled();
 void FetchArchive(const std::string& id) {
     Entry selected;
     { std::lock_guard lock(mutex); if(auto* item=Find(id)) selected=*item; else return; }
     std::string result;
     Install(selected,false,result);
+    ReconcileInstalled();
     std::lock_guard lock(mutex);
     if(auto* item=Find(id)) {
         item->downloading=false; item->downloadStatus=std::move(result);
         if(item->downloadStatus=="Downloaded into TacoPacks.") item->installedVersion=item->version;
+    }
+}
+void ReconcileInstalled() {
+    const auto records=InstalledPacks::Load(AppRuntime::GetAddonDirectory()/"installed-packs.json");
+    std::vector<Entry> copy;
+    { std::lock_guard lock(mutex); copy=entries; }
+    InstalledPacks::Reconcile(directory,records,copy);
+    bool disappeared=false;
+    { std::lock_guard lock(mutex);
+      for(const auto& checked:copy) if(auto* item=Find(checked.id)) {
+          disappeared|=!item->installedFilename.empty() && checked.installedFilename.empty();
+          item->installedFilename=checked.installedFilename;
+          item->installedVersion=checked.installedVersion;
+      }
+      reconcileQueued=false;
+      if(disappeared) reloadRequested.store(true);
+    }
+}
+void RemoveArchive(const Job& job) {
+    std::string result;
+    const bool removed=InstalledPacks::Remove(directory,AppRuntime::GetAddonDirectory()/"installed-packs.json",job.filename,result);
+    ReconcileInstalled();
+    { std::lock_guard lock(mutex); if(auto* item=Find(job.id)) {
+        item->removing=false; item->downloadStatus=std::move(result);
+    }
+      if(removed) reloadRequested.store(true);
     }
 }
 void UpdateTracked() {
@@ -278,8 +313,11 @@ void UpdateTracked() {
     auto records=InstalledPacks::Load(manifest);
     std::vector<Entry> catalog;
     { std::lock_guard lock(mutex); catalog=entries; }
-    unsigned updated=0,failed=0,unmatched=0;
+    unsigned updated=0,failed=0,unmatched=0,installedCount=0;
     for(const auto& record:records) {
+        std::error_code ec;
+        if(!std::filesystem::is_regular_file(directory/Wide(record.filename),ec) || ec) continue;
+        ++installedCount;
         // Never scan or rewrite manually installed .taco files.
         const Entry* latest=InstalledPacks::Match(record,catalog);
         if(!latest) { ++unmatched; continue; }
@@ -292,9 +330,10 @@ void UpdateTracked() {
             if(result=="Updated in TacoPacks.") item->installedVersion=item->version;
         } }
     }
+    ReconcileInstalled();
     if(updated) reloadRequested.store(true);
     std::lock_guard lock(mutex);
-    if(records.empty()) updateStatus="No Taquito-downloaded packs to check.";
+    if(!installedCount) updateStatus="No installed Taquito-downloaded packs to check.";
     else if(!updated && !failed && !unmatched) updateStatus="Tracked packs are up to date.";
     else updateStatus=std::to_string(updated)+" updated, "+std::to_string(failed)+" failed, "+
         std::to_string(unmatched)+" unmatched.";
@@ -314,7 +353,9 @@ void Run() {
             else { std::lock_guard lock(mutex); updateStatus="Update check failed: "+status; loading=false; updateQueued=false; }
         }
         else if(job.kind==Kind::Description) FetchDescription(job.id);
-        else FetchArchive(job.id);
+        else if(job.kind==Kind::Archive) FetchArchive(job.id);
+        else if(job.kind==Kind::Remove) RemoveArchive(job);
+        else ReconcileInstalled();
     }
 }
 }
@@ -329,10 +370,11 @@ void Stop() {
     { std::lock_guard lock(mutex); stopping=true; jobs.clear(); }
     wake.notify_one(); if(worker.joinable()) worker.join();
     std::lock_guard lock(mutex); entries.clear(); status.clear(); updateStatus.clear(); loading=false; directory.clear();
-    stopping=false; updateQueued=false; reloadRequested.store(false);
+    stopping=false; updateQueued=false; reconcileQueued=false; nextReconcile={}; reloadRequested.store(false);
 }
 void Refresh() {
-    std::lock_guard lock(mutex); if(!worker.joinable() || loading) return;
+    std::lock_guard lock(mutex); if(!worker.joinable() || loading ||
+        std::any_of(entries.begin(),entries.end(),[](const auto& e){return e.downloading||e.removing;})) return;
     loading=true; status="Refreshing the Blish HUD catalog..."; jobs.push_back({Kind::Catalog,{}}); wake.notify_one();
 }
 void Describe(const std::string& id) {
@@ -344,9 +386,24 @@ void Describe(const std::string& id) {
 void Download(const std::string& id) {
     std::lock_guard lock(mutex);
     auto* item=Find(id);
-    if(!item || item->downloading) return;
+    if(!worker.joinable() || stopping || loading || !item || item->downloading || item->removing) return;
     item->downloading=true; item->downloadStatus="Downloading...";
     jobs.push_back({Kind::Archive,id}); wake.notify_one();
+}
+void Remove(const std::string& id,const std::string& expectedFilename) {
+    std::lock_guard lock(mutex);
+    auto* item=Find(id);
+    if(!worker.joinable() || stopping || loading || !item || item->downloading || item->removing ||
+       !SafeFilename(item->installedFilename) || item->installedFilename!=expectedFilename) return;
+    item->removing=true; item->downloadStatus="Removing...";
+    jobs.push_back({Kind::Remove,id,item->installedFilename}); wake.notify_one();
+}
+void RefreshInstalled() {
+    std::lock_guard lock(mutex);
+    const auto now=std::chrono::steady_clock::now();
+    if(!worker.joinable() || stopping || loading || reconcileQueued || now<nextReconcile) return;
+    reconcileQueued=true; nextReconcile=now+std::chrono::seconds(1);
+    jobs.push_back({Kind::Reconcile,{}}); wake.notify_one();
 }
 void CheckForUpdates(const std::filesystem::path& packsDirectory) {
     std::lock_guard lock(mutex);

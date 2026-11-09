@@ -1,8 +1,13 @@
+#include "../Core/AddonLifetime.h"
 #include "PresetsWindow.h"
 #include "../Core/Presets.h"
 #include "../Core/AppSettings.h"
 #include "../imgui/imgui.h"
-namespace {bool shown=false;std::string renameId;char nameBuffer[256]{};}
+namespace {struct RuntimeState {
+    bool shown=false;std::string renameId;char nameBuffer[256]{};
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [shown,renameId,nameBuffer]=storage.Get();}
 void PresetsWindow::Open(){shown=true;}
 void PresetsWindow::Close(){shown=false;renameId.clear();}
 void PresetsWindow::Render(std::vector<TacoPack::Pack>&packs,void(*changed)()){

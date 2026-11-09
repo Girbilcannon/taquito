@@ -1,3 +1,4 @@
+#include "../Core/AddonLifetime.h"
 #include "MarkerInteractions.h"
 #include "../Core/AppSettings.h"
 #include "../Core/MarkerActions.h"
@@ -13,12 +14,16 @@
 #include <unordered_set>
 
 namespace {
-MarkerActions::Proximity proximity;
-std::unordered_set<const TacoPack::Marker*> dismissed;
-std::atomic_bool requested{false};
-std::string notification;
-double notificationUntil=0,lastAutomatic=-10;
-bool hudChanged=false;
+struct RuntimeState {
+    MarkerActions::Proximity proximity;
+    std::unordered_set<const TacoPack::Marker*> dismissed;
+    std::atomic_bool requested{false};
+    std::string notification;
+    double notificationUntil=0,lastAutomatic=-10;
+    bool hudChanged=false;
+};
+AddonLifetime::Storage<RuntimeState> storage;
+auto& [proximity,dismissed,requested,notification,notificationUntil,lastAutomatic,hudChanged]=storage.Get();
 bool Copy(const std::string& text,const std::string& message) {
     if(text.empty() || AppSettings::Get().clipboardMode==AppSettings::ClipboardMode::Never) return false;
     ImGui::SetClipboardText(text.c_str());
