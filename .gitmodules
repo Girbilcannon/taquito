@@ -1,9 +1,0 @@
-[submodule "Taquito/src/nexus"]
-	path = Taquito/src/nexus
-	url = https://github.com/RaidcoreGG/Nexus-API.git
-[submodule "Taquito/src/mumble"]
-	path = Taquito/src/mumble
-	url = https://github.com/RaidcoreGG/RCGG-lib-mumble-api.git
-[submodule "Taquito/src/imgui"]
-	path = Taquito/src/imgui
-	url = https://github.com/RaidcoreGG/imgui.git

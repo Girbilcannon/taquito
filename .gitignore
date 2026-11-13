@@ -22,12 +22,3 @@ x64/
 TacoPacks/
 installed-packs.json
 settings.txt
-
-# Ignore local dependency copies with either repository layout.
-# To register these paths as submodules later, use git submodule add -f.
-/src/nexus/
-/src/mumble/
-/src/imgui/
-/Taquito/src/nexus/
-/Taquito/src/mumble/
-/Taquito/src/imgui/
