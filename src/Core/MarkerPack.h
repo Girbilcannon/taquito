@@ -29,6 +29,8 @@ struct Style {
     std::string showCategory, hideCategory, toggleCategory;
     int behavior = 0;
     bool invertBehavior = false, canFade = true, isWall = false;
+    enum class Cull { None, Clockwise, CounterClockwise };
+    Cull cull = Cull::None;
     float resetLength = 0;
     enum class Bounce { None, Bounce, Rise };
     Bounce bounce = Bounce::None;
@@ -39,6 +41,7 @@ struct Style {
     std::unordered_map<std::string, std::string> attributes;
     std::string icon, texture;
     float iconSize = 1, height = 1.5f, alpha = 1, fadeNear = -1, fadeFar = -1;
+    bool distanceFadeDisabled=false; // Derived from an explicitly negative XML fade value.
     float trailScale = 1, animSpeed = 1;
     float mapSize = 20;
     float minSize = 5, maxSize = 2048;

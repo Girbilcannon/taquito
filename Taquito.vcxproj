@@ -45,7 +45,7 @@
     <ClCompile Include="src\UI\MarkerInteractions.cpp" />
     <ClCompile Include="src\UI\CategoryMenu.cpp" />
     <ClCompile Include="src\Core\AppRuntime.cpp" /><ClCompile Include="src\Core\AppSettings.cpp" /><ClCompile Include="src\Core\MarkerPack.cpp" /><ClCompile Include="src\Core\OnlinePacks.cpp" /><ClCompile Include="src\Core\InstalledPacks.cpp" />
-    <ClCompile Include="src\UI\QuickMenu.cpp" /><ClCompile Include="src\UI\OverlayRenderer.cpp" /><ClCompile Include="src\UI\SettingsWindow.cpp" /><ClCompile Include="src\UI\PackBrowserWindow.cpp" />
+    <ClCompile Include="src\UI\ControlHUD.cpp" /><ClCompile Include="src\UI\QuickMenu.cpp" /><ClCompile Include="src\UI\OverlayRenderer.cpp" /><ClCompile Include="src\UI\SettingsWindow.cpp" /><ClCompile Include="src\UI\PackBrowserWindow.cpp" />
     <ClCompile Include="src\third_party\miniz.c" />
     <ClCompile Include="src\third_party\jsonxx.cpp" />
     <ClCompile Include="src\imgui\imgui.cpp" /><ClCompile Include="src\imgui\imgui_draw.cpp" /><ClCompile Include="src\imgui\imgui_tables.cpp" /><ClCompile Include="src\imgui\imgui_widgets.cpp" />
@@ -61,7 +61,7 @@
     <ClInclude Include="src\Core\AtomicFile.h" />
     <ClInclude Include="src\Core\AddonLifetime.h" />
     <ClInclude Include="src\UI\HudPlacement.h" />
-    <ClInclude Include="src\UI\PieUITheme.h" />
+    <ClInclude Include="src\UI\ControlHUD.h" /><ClInclude Include="src\UI\PieUITheme.h" />
     <ClInclude Include="src\UI\MapTrailRibbon.h" />
     <ClInclude Include="src\Core\VisualAttributes.h" /><ClInclude Include="src\UI\CategoryMenu.h" />
     <ClInclude Include="src\Core\MapTrailVisuals.h" />

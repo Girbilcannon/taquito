@@ -31,6 +31,7 @@
     <ClCompile Include="src\Core\PieUIBridge.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="src\Core\Presets.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="src\UI\ShortcutSettings.cpp"><Filter>UI</Filter></ClCompile>
+    <ClCompile Include="src\UI\ControlHUD.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="src\UI\PresetsWindow.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="src\Core\PathingState.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="src\Core\AttributeRuntime.cpp"><Filter>Core</Filter></ClCompile>
@@ -92,6 +93,7 @@
     <ClInclude Include="src\Core\AtomicFile.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\Core\AddonLifetime.h"><Filter>Core</Filter></ClInclude>
     <ClInclude Include="src\UI\HudPlacement.h"><Filter>UI</Filter></ClInclude>
+    <ClInclude Include="src\UI\ControlHUD.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="src\UI\PieUITheme.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="src\UI\MapTrailRibbon.h"><Filter>UI</Filter></ClInclude>
     <ClInclude Include="src\Core\VisualAttributes.h"><Filter>Core</Filter></ClInclude>

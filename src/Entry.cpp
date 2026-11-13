@@ -12,6 +12,7 @@
 #include "TaquitoAPI.h"
 #include "UI/QuickMenu.h"
 #include "UI/PresetsWindow.h"
+#include "UI/ControlHUD.h"
 #include "UI/ShortcutSettings.h"
 #include "UI/MarkerInteractions.h"
 #include "resource.h"
@@ -28,6 +29,11 @@ constexpr const char* PreviousBindID = "KB_TAQUITO_PREVIOUS_PRESET_78FD302C";
 constexpr const char* IconBindID = "KB_TAQUITO_ICON_ACTION_78FD302C";
 constexpr const char* InteractBindID = "KB_TAQUITO_MARKER_INTERACT_78FD302C";
 constexpr unsigned IconResource = IDR_TAQUITO_QUICKACCESS_ICON;
+constexpr const char* WorldBindID="KB_TAQUITO_WORLD_78FD302C";
+constexpr const char* FullBindID="KB_TAQUITO_FULL_MAP_78FD302C";
+constexpr const char* MiniBindID="KB_TAQUITO_MINIMAP_78FD302C";
+constexpr const char* HudBindID="KB_TAQUITO_CONTROL_HUD_78FD302C";
+bool contextRegistered=false;
 AddonDefinition_t definition{};
 AddonAPI_t* api = nullptr;
 HMODULE module = nullptr;
@@ -36,6 +42,10 @@ void OnToggle(const char*, bool released) { AddonLifetime::Callback callback;if(
 void OnRendering(const char*,bool released){ AddonLifetime::Callback callback;if(!callback)return;ShortcutSettings::Request(ShortcutSettings::ToggleRendering,released);}
 void OnNextPreset(const char*,bool released){ AddonLifetime::Callback callback;if(!callback)return;ShortcutSettings::Request(ShortcutSettings::NextPreset,released);}
 void OnPreviousPreset(const char*,bool released){ AddonLifetime::Callback callback;if(!callback)return;ShortcutSettings::Request(ShortcutSettings::PreviousPreset,released);}
+void OnWorld(const char*,bool released){AddonLifetime::Callback callback;if(callback)ShortcutSettings::Request(ShortcutSettings::ToggleWorld,released);}
+void OnFull(const char*,bool released){AddonLifetime::Callback callback;if(callback)ShortcutSettings::Request(ShortcutSettings::ToggleFullMap,released);}
+void OnMini(const char*,bool released){AddonLifetime::Callback callback;if(callback)ShortcutSettings::Request(ShortcutSettings::ToggleMinimap,released);}
+void OnHUD(const char*,bool released){AddonLifetime::Callback callback;if(callback)ShortcutSettings::Request(ShortcutSettings::ToggleControlHUD,released);}
 void OnIconToggle(const char*,bool);
 void OnMarkerInteract(const char*,bool);
 Keybind_t LegacyDefault(const AppSettings::Shortcut&old){
@@ -51,6 +61,14 @@ void RegisterShortcuts(){
     api->InputBinds_RegisterWithStruct(PreviousBindID,OnPreviousPreset,LegacyDefault(AppSettings::Get().shortcuts[2]));
     api->InputBinds_RegisterWithStruct(IconBindID,OnIconToggle,{});
     api->InputBinds_RegisterWithString(InteractBindID,OnMarkerInteract,"ALT+F");
+    api->InputBinds_RegisterWithStruct(WorldBindID,OnWorld,{});
+    api->InputBinds_RegisterWithStruct(FullBindID,OnFull,{});
+    api->InputBinds_RegisterWithStruct(MiniBindID,OnMini,{});
+    api->InputBinds_RegisterWithStruct(HudBindID,OnHUD,{});
+    api->Localization_Set(WorldBindID,"en","Toggle World Markers and Trails");
+    api->Localization_Set(FullBindID,"en","Toggle Full Map Markers and Trails");
+    api->Localization_Set(MiniBindID,"en","Toggle Minimap Markers and Trails");
+    api->Localization_Set(HudBindID,"en","Open/Close Control HUD");
     api->Localization_Set(BindID,"en","Open/Close Quick Menu");
     api->Localization_Set(RenderBindID,"en","Disable Taquito Rendering");
     api->Localization_Set(NextBindID,"en","Next Preset");
@@ -65,7 +83,8 @@ void OnPathingRequest(void*) { AddonLifetime::Callback callback;if(!callback)ret
 void OnPieUIReady(void* value) { AddonLifetime::Callback callback;if(!callback)return;PieUIBridge::OnReady(value); }
 void OnPieUICompass(void* value) { AddonLifetime::Callback callback;if(!callback)return;PieUIBridge::OnNativeCompass(value); }
 void OnPieUITheme(void* value) { AddonLifetime::Callback callback;if(!callback)return;PieUIBridge::OnTheme(value); }
-void OnRender() { AddonLifetime::Callback callback;if(!callback)return; QuickMenu::Render(); }
+void SyncQuickAccessContext();
+void OnRender() { AddonLifetime::Callback callback;if(!callback)return; QuickMenu::Render();SyncQuickAccessContext(); }
 UINT OnMouseMessage(HWND,UINT message,WPARAM,LPARAM) {
     AddonLifetime::Callback callback;
     if(callback)switch(message) {
@@ -79,8 +98,17 @@ UINT OnMouseMessage(HWND,UINT message,WPARAM,LPARAM) {
     return message; // Observe only: let Nexus, other addons and the game handle it.
 }
 void OnQuickAccessMenu() { AddonLifetime::Callback callback;if(!callback)return;
+    if(AppSettings::Get().controlHudEnabled)
+        if(ImGui::MenuItem("Control HUD",nullptr,ControlHUD::IsOpen()))ControlHUD::Toggle();
     if(AppSettings::Get().presetsEnabled&&Presets::Enabled())
         if(ImGui::MenuItem("Open Presets"))PresetsWindow::Open();
+}
+void SyncQuickAccessContext(){
+    const bool available=AppSettings::Get().controlHudEnabled||(AppSettings::Get().presetsEnabled&&Presets::Enabled());
+    if(available==contextRegistered)return;
+    if(available)api->QuickAccess_AddContextMenu(PresetsContextID,QuickID,OnQuickAccessMenu);
+    else api->QuickAccess_RemoveContextMenu(PresetsContextID);
+    contextRegistered=available;
 }
 // Keep registrations below paired with OnUnload before changing the addon lifecycle.
 void OnLoad(AddonAPI_t* value) {
@@ -102,7 +130,7 @@ void OnLoad(AddonAPI_t* value) {
     RegisterShortcuts();
     api->Events_Subscribe(EV_MUMBLE_IDENTITY_UPDATED, OnMumbleIdentityUpdated);
     api->QuickAccess_Add(QuickID, IconID, IconID, IconBindID, Name);
-    api->QuickAccess_AddContextMenu(PresetsContextID,QuickID,OnQuickAccessMenu);
+    SyncQuickAccessContext();
     api->GUI_Register(RT_Render, OnRender);
     api->WndProc_Register(OnMouseMessage);
     api->Log(LOGL_INFO, Name, "Taquito " TAQUITO_VERSION " loaded.");
@@ -112,20 +140,26 @@ void OnUnload() {
     AddonLifetime::StopCallbacks();
     api->GUI_Deregister(OnRender);
     api->WndProc_Deregister(OnMouseMessage);
-    api->QuickAccess_RemoveContextMenu(PresetsContextID);
-    api->QuickAccess_Remove(QuickID);
     api->InputBinds_Deregister(BindID);
     api->InputBinds_Deregister(RenderBindID);
     api->InputBinds_Deregister(NextBindID);
     api->InputBinds_Deregister(PreviousBindID);
     api->InputBinds_Deregister(IconBindID);
     api->InputBinds_Deregister(InteractBindID);
+    api->InputBinds_Deregister(WorldBindID);
+    api->InputBinds_Deregister(FullBindID);
+    api->InputBinds_Deregister(MiniBindID);
+    api->InputBinds_Deregister(HudBindID);
     api->Events_Unsubscribe(EV_MUMBLE_IDENTITY_UPDATED, OnMumbleIdentityUpdated);
     api->Events_Unsubscribe(PieUIBridge::ReadyEvent,OnPieUIReady);
     api->Events_Unsubscribe(PieUIBridge::NativeCompassEvent,OnPieUICompass);
     api->Events_Unsubscribe(PieUIBridge::ThemeEvent,OnPieUITheme);
     api->Events_Unsubscribe(EV_TAQUITO_PATHING_REQUEST,OnPathingRequest);
     AddonLifetime::WaitForCallbacks();
+    if(contextRegistered)api->QuickAccess_RemoveContextMenu(PresetsContextID);
+    contextRegistered=false;
+    api->QuickAccess_Remove(QuickID);
+
     PieUIBridge::Shutdown();
     PathingState::Shutdown();
     QuickMenu::Shutdown();
@@ -148,7 +182,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     definition.Version.Major = 1;
     definition.Version.Minor = 0;
     definition.Version.Build = 1;
-    definition.Version.Revision = 23;
+    definition.Version.Revision = 26;
     definition.Author = "Girbilcannon.8259";
     definition.Description = "Lightweight TacO marker and trail pack viewer.";
     definition.Load = OnLoad;

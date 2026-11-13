@@ -39,6 +39,13 @@ inline void Populate(TacoPack::Style& style) {
     style.behavior=TacoPack::SupportedBehavior(mode) ? mode : 0;
     style.invertBehavior=boolean("invertbehavior",false);
     style.canFade=boolean("canfade",true);style.isWall=boolean("iswall",false);
+    auto cull=value("cull");
+    const auto firstCull=cull.find_first_not_of(" \t\r\n"),lastCull=cull.find_last_not_of(" \t\r\n");
+    if(firstCull!=std::string::npos)cull=cull.substr(firstCull,lastCull-firstCull+1);
+    for(auto& c:cull)if(c>='A'&&c<='Z')c+=('a'-'A');
+    style.cull=cull=="clockwise" ? TacoPack::Style::Cull::Clockwise :
+               cull=="counterclockwise" ? TacoPack::Style::Cull::CounterClockwise : TacoPack::Style::Cull::None;
+    style.distanceFadeDisabled=number("fadenear",0)<0 || number("fadefar",0)<0;
     style.resetLength=std::clamp(number("resetlength",0),0.0f,315576000.0f);
     auto bounce=value("bounce");for(auto& c:bounce)if(c>='A'&&c<='Z')c+=('a'-'A');
     style.bounce=bounce=="bounce" ? TacoPack::Style::Bounce::Bounce : bounce=="rise" ? TacoPack::Style::Bounce::Rise : TacoPack::Style::Bounce::None;

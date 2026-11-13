@@ -1,4 +1,5 @@
 #include "PieUITheme.h"
+#include "ControlHUD.h"
 #include "../Core/AddonLifetime.h"
 #include "QuickMenu.h"
 #include "CategoryMenu.h"
@@ -197,14 +198,14 @@ void QuickMenu::Shutdown() {
     renderer.Shutdown();packs.clear();packCatalog.clear();packsReady=false;loading=false;
     showMenu=false;toggleRequested=false;iconToggleRequested=false;
     lastIdentity.clear();character.clear();
-    PackBrowserWindow::Close();SettingsWindow::Close();PresetsWindow::Close();
+    PackBrowserWindow::Close();SettingsWindow::Close();PresetsWindow::Close();ControlHUD::Close();
     Presets::Clear();ShortcutSettings::Reset();
     {std::lock_guard lock(loadMutex);loadedPacks.reset();}
 }
 void QuickMenu::RequestToggle() { toggleRequested.store(true, std::memory_order_release); }
 void QuickMenu::RequestIconToggle(){iconToggleRequested.store(true,std::memory_order_release);}
 void QuickMenu::Render() {
-    PieUIBridge::Poll(ImGui::GetTime(),AppSettings::Get().pieUIThemes&&AppSettings::Get().pieUIThemeAutoRefresh);
+    PieUIBridge::Poll(ImGui::GetTime());
     PieUITheme::Scope theme(AppSettings::Get().pieUIThemes);
     if(OnlinePacks::ConsumeReloadRequest()) Refresh();
     ReceivePacks();
@@ -216,6 +217,10 @@ void QuickMenu::Render() {
     if(ShortcutSettings::MouseReleased()&1u)lastLeftReleaseFrame=ImGui::GetFrameCount();
     bool shortcutsChanged=false;
     if(shortcut.actions&1u){settings.renderingEnabled=!settings.renderingEnabled;shortcutsChanged=true;}
+    if(shortcut.actions&ShortcutSettings::ToggleWorld){settings.world=!settings.world;shortcutsChanged=true;}
+    if(shortcut.actions&ShortcutSettings::ToggleFullMap){settings.big=!settings.big;shortcutsChanged=true;}
+    if(shortcut.actions&ShortcutSettings::ToggleMinimap){settings.mini=!settings.mini;shortcutsChanged=true;}
+    if(shortcut.actions&ShortcutSettings::ToggleControlHUD)if(settings.controlHudEnabled)ControlHUD::Toggle();
     if(shortcut.actions&8u)QuickMenu::RequestToggle();
     if(packsReady&&((shortcut.actions&2u&&Presets::Step(1,packs))||(shortcut.actions&4u&&Presets::Step(-1,packs)))){PresetChanged();}
     if(shortcutsChanged)Save();
@@ -250,10 +255,12 @@ void QuickMenu::Render() {
                   settings.miniTrailSize, settings.bigTrailSize,
                   settings.worldIconSize, settings.worldTrailSize,
                   settings.playerBubble, settings.bubbleRadius, settings.bubbleFeather,
-                  settings.mapTrailStyle==AppSettings::MapTrailStyle::BlishHUD);
+                  settings.mapTrailStyle==AppSettings::MapTrailStyle::BlishHUD,
+                  settings.worldMarkerDistance,settings.worldTrailDistance);
     DrawMenu();
     PackBrowserWindow::Render();
     if(!settings.presetsEnabled)PresetsWindow::Close();
     PresetsWindow::Render(packs,PresetChanged);
     SettingsWindow::Render(packs,renderer,loading.load(),Refresh,Save);
+    ControlHUD::Render(Save);
 }

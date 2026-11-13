@@ -73,15 +73,14 @@ void PieUIBridge::Probe(bool refreshTheme){
     }
     if(!present.load())ClearTheme();
 }
-void PieUIBridge::Poll(double now,bool refreshTheme){
+void PieUIBridge::Poll(double now){
     if(!std::isfinite(now))return;
     const bool manual=themeRefreshRequested.exchange(false);
     if(lastProbe<0||now<lastProbe||now-lastProbe>=1){
         lastProbe=now;
-        // Pull again even with a cached palette: not every provider build
-        // broadcasts each in-session theme/trim change. Request before the
-        // UI pushes our scoped colors, and never hold the palette lock here.
-        Probe(refreshTheme||manual);
+        // Only discovery/manual requests pull a theme. Later changes normally
+        // arrive as broadcasts; no automatic palette refresh runs here.
+        Probe(manual);
     }
     else if(manual&&Present())if(auto send=sender.load())send(ThemeRequestEvent,nullptr);
 }

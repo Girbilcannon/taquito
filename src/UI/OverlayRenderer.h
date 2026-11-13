@@ -23,7 +23,8 @@ public:
               const Mumble::Identity* identity, bool world, bool mini, bool big,
               float miniIconSize, float bigIconSize, float miniTrailSize, float bigTrailSize,
               float worldIconSize, float worldTrailSize,
-              bool playerBubble, float bubbleRadius, float bubbleFeather, bool blishMapTrails = false);
+              bool playerBubble, float bubbleRadius, float bubbleFeather, bool blishMapTrails = false,
+              float worldMarkerDistance=1.0f,float worldTrailDistance=1.0f);
 private:
     static void BeginMapSampler(const ImDrawList*,const ImDrawCmd*);
     static void EndMapSampler(const ImDrawList*,const ImDrawCmd*);

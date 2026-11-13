@@ -1,6 +1,7 @@
 #pragma once
 namespace ShortcutSettings {
-enum Action : unsigned { ToggleRendering=1,NextPreset=2,PreviousPreset=4,ToggleMenu=8 };
+enum Action : unsigned { ToggleRendering=1,NextPreset=2,PreviousPreset=4,ToggleMenu=8,
+    ToggleWorld=16,ToggleFullMap=32,ToggleMinimap=64,ToggleControlHUD=128 };
 struct Result {unsigned actions=0;};
 // Nexus callbacks may run on other threads; execution stays on the render thread.
 void Request(unsigned action,bool released=false);

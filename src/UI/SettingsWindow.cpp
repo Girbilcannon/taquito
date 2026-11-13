@@ -56,6 +56,10 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
     }
     if(ImGui::CollapsingHeader("Scale")) {
         ImGui::TextDisabled("In world");
+        changed |= ImGui::SliderFloat("Marker distance##World",&settings.worldMarkerDistance,0.25f,4.0f,"%.2fx");
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Moves fadeNear; keeps fadeFar minus fadeNear unchanged. 1x uses the pack's fade range.");
+        changed |= ImGui::SliderFloat("Trail distance##World",&settings.worldTrailDistance,0.25f,4.0f,"%.2fx");
+        if(ImGui::IsItemHovered())ImGui::SetTooltip("Moves the fade start without changing its width. Missing fade values use 3000-3500 game inches.");
         changed |= ImGui::SliderFloat("Marker scale##World",&settings.worldIconSize,0.25f,3.0f,"%.2fx");
         changed |= ImGui::SliderFloat("Trail width##World",&settings.worldTrailSize,0.25f,3.0f,"%.2fx");
         ImGui::Spacing();
@@ -70,6 +74,7 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
         if(ImGui::Button("Reset all scales to 1.00x")) {
             settings.worldIconSize=settings.worldTrailSize=settings.miniIconSize=settings.miniTrailSize=
                 settings.bigIconSize=settings.bigTrailSize=1.0f;
+            settings.worldMarkerDistance=settings.worldTrailDistance=1.0f;
             changed=true;
         }
         ImGui::Spacing();
@@ -97,10 +102,8 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
             if(settings.pieUIThemes)PieUIBridge::RequestThemeRefresh();
         }
         if(settings.pieUIThemes) {
-            const float refreshWidth=ImGui::CalcTextSize("Refresh Theme").x+ImGui::GetStyle().FramePadding.x*2;
-            if(ImGui::GetContentRegionAvail().x>=refreshWidth+ImGui::GetStyle().ItemSpacing.x)ImGui::SameLine();
+            ImGui::Dummy({0,6});
             if(ImGui::Button("Refresh Theme"))PieUIBridge::RequestThemeRefresh();
-            changed |= ImGui::Checkbox("Auto-refresh Pie UI Themes",&settings.pieUIThemeAutoRefresh);
         }
         if(!piePresent){ImGui::PopStyleVar();ImGui::PopItemFlag();}
         if(!piePresent&&ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip("Requires Pie UI to be loaded in Nexus.");
@@ -122,6 +125,12 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
             changed |= ImGui::SliderFloat("Soft fade width",&settings.bubbleFeather,0.25f,3.0f,"%.2f m");
             ImGui::TextDisabled("Affects in-world markers and trails only.");
         }
+        ImGui::Spacing();
+    }
+    if(ImGui::CollapsingHeader("Control HUD")) {
+        changed |= ImGui::Checkbox("Enable Control HUD",&settings.controlHudEnabled);
+        int layout=settings.controlHudHorizontal?1:0;
+        if(ImGui::Combo("Layout##ControlHUD",&layout,"Vertical\0Horizontal\0\0")){settings.controlHudHorizontal=layout==1;changed=true;}
         ImGui::Spacing();
     }
     if(ImGui::CollapsingHeader("Marker Packs")) {

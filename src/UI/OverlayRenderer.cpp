@@ -89,6 +89,9 @@ bool Clip(ImVec2& a, ImVec2& b, ImVec2 mn, ImVec2 mx) {
     if(!edge(-dx,a.x-mn.x)||!edge(dx,mx.x-a.x)||!edge(-dy,a.y-mn.y)||!edge(dy,mx.y-a.y)) return false;
     ImVec2 orig=a; b={orig.x+t1*dx,orig.y+t1*dy}; a={orig.x+t0*dx,orig.y+t0*dy}; return true;
 }
+float SignedArea(ImVec2 a,ImVec2 b,ImVec2 c) {
+    return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+}
 void GroundRibbon(ImDrawList* draw, const Projection& proj, Vec3 avatar, Vec3 a, Vec3 b,
                   float width, const TacoPack::Style& style, ID3D11ShaderResourceView* texture,
                   int imageWidth, int imageHeight, double phase, unsigned& budget,
@@ -120,6 +123,10 @@ void GroundRibbon(ImDrawList* draw, const Projection& proj, Vec3 avatar, Vec3 a,
             !proj.Screen({q.x+ort.x,q.y+ort.y,q.z+ort.z},p2) ||
             !proj.Screen({q.x-ort.x,q.y-ort.y,q.z-ort.z},p3) ||
             !proj.Screen({p.x-ort.x,p.y-ort.y,p.z-ort.z},p4)) return;
+        // Our wall ribbon uses the opposite side vector to Pathing's Z-up
+        // wall strip. Account for its winding without changing existing UVs.
+        const float winding=SignedArea(p1,p2,p3)*(style.isWall ? -1.0f : 1.0f);
+        if(VisualAttributes::Culled(style.cull,winding))return;
         const float left=std::min({p1.x,p2.x,p3.x,p4.x}),right=std::max({p1.x,p2.x,p3.x,p4.x});
         const float top=std::min({p1.y,p2.y,p3.y,p4.y}),bottom=std::max({p1.y,p2.y,p3.y,p4.y});
         if(right<0 || left>display.x || bottom<0 || top>display.y) return;
@@ -268,7 +275,8 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                     const Mumble::Identity* identity, bool world, bool mini, bool big,
                     float miniIconSize, float bigIconSize, float miniTrailSize, float bigTrailSize,
                     float worldIconSize, float worldTrailSize,
-                    bool playerBubble, float bubbleRadius, float bubbleFeather, bool blishMapTrails) {
+                    bool playerBubble, float bubbleRadius, float bubbleFeather, bool blishMapTrails,
+                    float worldMarkerDistance,float worldTrailDistance) {
     // ImGui stores raw SRV pointers in its draw list. A menu click later in the
     // same frame must not release a texture until those commands are consumed.
     if (clearTexturesNextFrame_) { ClearTextures(); clearTexturesNextFrame_ = false; }
@@ -376,6 +384,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
             // The map clip applies only to map geometry. Applying it before
             // the world pass clipped every visible world trail to the compass.
             auto trailStyle=t.style;trailStyle.tint=CheckpointRuntime::Tint(t,t.style.tint);
+            VisualAttributes::ScaleFade(trailStyle,worldTrailDistance);
             if(inWorld) for(const auto& strip:t.strips) {
                 double phase=0;
                 for(size_t i=1;i<strip.size();++i) {
@@ -414,30 +423,34 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
             if(!inWorld && !onMap) continue;
             const auto markerTint=CheckpointRuntime::Tint(p,p.style.tint);
             Image* image=Texture(pack,p.asset);
-            auto drawMarker=[&](ImVec2 pos,float half,float alpha) {
+            auto drawMarker=[&](ImVec2 pos,float half,float alpha,bool worldFacing=false) {
                 if(alpha<=.01f) return;
+                // Camera-facing quads always have clockwise screen winding.
+                if(worldFacing && VisualAttributes::Culled(p.style.cull,1.0f))return;
                 if(image) draw->AddImage(reinterpret_cast<ImTextureID>(image->view.Get()),{pos.x-half,pos.y-half},{pos.x+half,pos.y+half},{0,0},{1,1},Tint(markerTint,alpha));
                 else draw->AddCircleFilled(pos,std::max(half,3.0f),Tint(markerTint,alpha));
             };
             if(inWorld) {
                 Vec3 point=p.position; point.y+=p.style.height+AttributeRuntime::BounceOffset(p);
                 ImVec2 screen; float depth=proj.Depth(point);
-                const float opacity=Alpha(p.style,std::sqrt(Dot(Sub(point,avatar),Sub(point,avatar)))) *
+                const float opacity=VisualAttributes::Opacity(p.style,std::sqrt(Dot(Sub(point,avatar),Sub(point,avatar))),worldMarkerDistance) *
                     Bubble(point,avatar,playerBubble && p.style.canFade,bubbleRadius,bubbleFeather);
                 if (image && opacity>.01f && p.style.hasRotation && depth>.05f) {
-                    // Fixed orientation in world space; screenSticky uses its own pixel placement.
+                    // XML rotation is Z-up; convert only the rotated image offsets
+                    // to Mumble's Y-up world. Sticky/map images use their own placement.
                     float half=VisualAttributes::WorldMarkerHalfSize(proj.focal,depth,p.style,worldIconSize)*depth/proj.focal;
                     ImVec2 corners[4];
                     const Vec3 local[4]={{-half,half,0},{half,half,0},{half,-half,0},{-half,-half,0}};
                     bool valid=true;
                     for (int i=0;i<4;++i) {
-                        const Vec3 r=VisualAttributes::Rotate(local[i],p.style.rotation);
+                        const Vec3 r=VisualAttributes::WorldMarkerOffset(local[i],p.style.rotation);
                         valid &= proj.Screen({point.x+r.x,point.y+r.y,point.z+r.z},corners[i]);
                     }
-                    if (valid) draw->AddImageQuad(reinterpret_cast<ImTextureID>(image->view.Get()),
+                    if (valid && !VisualAttributes::Culled(p.style.cull,SignedArea(corners[0],corners[1],corners[2])))
+                        draw->AddImageQuad(reinterpret_cast<ImTextureID>(image->view.Get()),
                         corners[0],corners[1],corners[2],corners[3],{0,0},{1,0},{1,1},{0,1},Tint(markerTint,opacity));
                 } else if(proj.Screen(point,screen) && screen.x>=-200 && screen.y>=-200 && screen.x<=io.DisplaySize.x+200 && screen.y<=io.DisplaySize.y+200)
-                    drawMarker(screen,VisualAttributes::WorldMarkerHalfSize(proj.focal,depth,p.style,worldIconSize),opacity);
+                    drawMarker(screen,VisualAttributes::WorldMarkerHalfSize(proj.focal,depth,p.style,worldIconSize),opacity,true);
             }
             if(onMap) {
                 ImVec2 screen=mp.Screen(p.position);

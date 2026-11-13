@@ -29,7 +29,7 @@ void OnNativeCompass(void*);
 struct MapOwnership { bool minimap=false,worldMap=false; };
 MapOwnership GetMapOwnership();
 void Probe(bool refreshTheme=false);
-void Poll(double frameSeconds,bool refreshTheme=false);
+void Poll(double frameSeconds);
 bool Present();
 // A single complete base64 type-0x04 map link; whitespace outside the link is allowed.
 // This verifies format, not whether a particular map point exists or is unlocked.

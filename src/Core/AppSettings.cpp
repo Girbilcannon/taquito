@@ -76,7 +76,8 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
     // Missing option in older settings is an explicit opt-out on upgrade/reload.
     state.autoTriggerPieUIMaps=false;
     state.pieUIThemes=false;
-    state.pieUIThemeAutoRefresh=false;
+    state.controlHudEnabled=true;state.controlHudHorizontal=false;
+    state.worldMarkerDistance=state.worldTrailDistance=1.0f;
     state.presetsEnabled=false;state.quickCloseMenu=false;state.shortcuts={};
     std::ifstream fileInput(directory / "settings.txt");
     // Filename aliases keep category toggles when a tracked pack changes its catalog filename.
@@ -117,10 +118,12 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
             if (!(input >> normalizedScaleBaseline)) continue;
         } else if (kind == "miniSize" || kind == "bigSize" || kind == "miniIconSize" || kind == "miniTrailSize" ||
                    kind == "bigIconSize" || kind == "bigTrailSize" || kind == "worldIconSize" || kind == "worldTrailSize" ||
-                   kind == "bubbleRadius" || kind == "bubbleFeather") {
+                   kind == "bubbleRadius" || kind == "bubbleFeather" || kind=="worldMarkerDistance" || kind=="worldTrailDistance") {
             float value;
             if (!(input >> value)) continue;
-            value = std::clamp(value, 0.25f, kind == "bubbleRadius" ? 8.0f : 3.0f);
+            if(!std::isfinite(value))continue;
+            value = std::clamp(value, 0.25f, kind == "bubbleRadius" ? 8.0f :
+                (kind=="worldMarkerDistance"||kind=="worldTrailDistance") ? 4.0f : 3.0f);
             if (kind == "miniSize") { legacyMini=value; hasLegacyMini=true; }
             else if (kind == "bigSize") { legacyBig=value; hasLegacyBig=true; }
             else if (kind == "miniIconSize") { state.miniIconSize=value; hasMiniIcon=true; }
@@ -129,6 +132,8 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
             else if (kind == "bigTrailSize") { state.bigTrailSize=value; hasBigTrail=true; }
             else if (kind == "worldIconSize") state.worldIconSize = value;
             else if (kind == "worldTrailSize") state.worldTrailSize = value;
+            else if (kind == "worldMarkerDistance") state.worldMarkerDistance=value;
+            else if (kind == "worldTrailDistance") state.worldTrailDistance=value;
             else if (kind == "bubbleRadius") state.bubbleRadius = value;
             else state.bubbleFeather = value;
         } else {
@@ -141,7 +146,8 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
             else if (kind == "presetsEnabled") state.presetsEnabled=value;
             else if (kind == "quickCloseMenu") state.quickCloseMenu=value;
             else if (kind == "pieUIThemes") state.pieUIThemes=value;
-            else if (kind == "pieUIThemeAutoRefresh") state.pieUIThemeAutoRefresh=value;
+            else if (kind == "controlHudEnabled") state.controlHudEnabled=value;
+            else if (kind == "controlHudHorizontal") state.controlHudHorizontal=value;
             else if (kind == "showMarkerInfo") state.showMarkerInfo = value;
             else if (kind == "autoTriggerPieUIMaps") state.autoTriggerPieUIMaps = value;
         }
@@ -196,7 +202,8 @@ void AppSettings::Save(const std::filesystem::path& directory, const std::vector
     output << "clipboardMode " << static_cast<int>(settings.clipboardMode) << "\nshowMarkerInfo " << settings.showMarkerInfo << '\n';
     output << "autoTriggerPieUIMaps " << settings.autoTriggerPieUIMaps << '\n';
     output << "pieUIThemes " << settings.pieUIThemes << '\n';
-    output << "pieUIThemeAutoRefresh " << settings.pieUIThemeAutoRefresh << '\n';
+    output << "controlHudEnabled " << settings.controlHudEnabled << "\ncontrolHudHorizontal " << settings.controlHudHorizontal << '\n';
+    output << "worldMarkerDistance " << settings.worldMarkerDistance << "\nworldTrailDistance " << settings.worldTrailDistance << '\n';
     output << "world " << settings.world << "\nmini " << settings.mini << "\nbig " << settings.big << '\n';
     output << "miniIconSize " << settings.miniIconSize << "\nminiTrailSize " << settings.miniTrailSize << '\n';
     output << "bigIconSize " << settings.bigIconSize << "\nbigTrailSize " << settings.bigTrailSize << '\n';
