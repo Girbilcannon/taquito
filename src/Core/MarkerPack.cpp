@@ -342,7 +342,7 @@ bool ExtractAsset(const std::filesystem::path& archive, const std::string& name,
     bool ok = idx >= 0 && Read(zip, static_cast<mz_uint>(idx), bytes, limit);
     mz_zip_reader_end(&zip); return ok;
 }
-bool IsVisible(const Category* c) { if(!c)return false;for (; c; c = c->parent) if (!c->visible) return false; return true; }
+bool IsVisible(const Category* c) { if(!c)return false;for (; c; c = c->parent) if (!c->visible || c->searchFiltered) return false; return true; }
 bool HasLua(const Style& style) {
     for(const char* key:{"script-filter","script-tick","script-focus","script-trigger","script-once"}) {
         auto value=style.attributes.find(key);

@@ -66,6 +66,7 @@ struct Category {
     Style style;
     bool visible = true;
     bool hidden = false, separator = false;
+    bool searchFiltered = false; // Temporary effective visibility; never a saved checkbox/preset value.
     bool containsLua = false; // Warning on top-level pack categories only.
     Category* parent = nullptr;
     std::vector<std::unique_ptr<Category>> children;

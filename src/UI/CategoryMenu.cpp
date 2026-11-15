@@ -34,7 +34,7 @@ void Tip(const TacoPack::Category& category,bool hovered) {
         ImGui::SetTooltip("%s",text->c_str());
 }
 bool HasChildren(const TacoPack::Category& category) {
-    for(const auto& child:category.children) if(!child->hidden) return true;
+    for(const auto& child:category.children) if(!child->hidden && !child->searchFiltered) return true;
     return false;
 }
 std::string ContextId(const TacoPack::Category& category) {
@@ -56,7 +56,7 @@ void NextTierMenu(TacoPack::Category& category,bool checkboxClicked,bool taco,vo
         if(!category.children.empty() && ImGui::MenuItem("Enable All")) {
             bool modified=false;
             for(auto& child:category.children) {
-                if(!child->hidden && !child->separator && !child->visible) {
+                if(!child->hidden && !child->searchFiltered && !child->separator && !child->visible) {
                     child->visible=true; modified=true;
                 }
             }
@@ -66,7 +66,7 @@ void NextTierMenu(TacoPack::Category& category,bool checkboxClicked,bool taco,vo
             bool modified=false;
             for(auto& child:category.children) {
                 // Only direct child checkboxes; no recursive changes.
-                if(!child->hidden && !child->separator && child->visible) {
+                if(!child->hidden && !child->searchFiltered && !child->separator && child->visible) {
                     child->visible=false; modified=true;
                 }
             }
@@ -77,7 +77,7 @@ void NextTierMenu(TacoPack::Category& category,bool checkboxClicked,bool taco,vo
 }
 }
 void CategoryMenu::Draw(TacoPack::Category& category,AppSettings::NestingStyle style,void (*changed)(),CopyAction copy) {
-    if(category.hidden) return;
+    if(category.hidden || category.searchFiltered) return;
     if(style==AppSettings::NestingStyle::Taco) ImGui::PushID(&category);
     else ImGui::PushID(category.key.c_str());
     const bool markLua=!category.parent && category.containsLua;

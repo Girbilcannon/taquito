@@ -1,5 +1,6 @@
 #include "AddonLifetime.h"
 #include "AppRuntime.h"
+#include "ApiKeyStorage.h"
 #include <atomic>
 #include <vector>
 
@@ -34,8 +35,9 @@ void AppRuntime::Initialize(AddonAPI_t* value, HMODULE addonModule) {
     error.clear();
     std::filesystem::create_directories(packsDirectory, error);
     if (error) api->Log(LOGL_WARNING, "Taquito", "Could not create TacoPacks beside the addon DLL.");
+    ApiKeyStorage::Initialize(addonDirectory);
 }
-void AppRuntime::Shutdown() { identity.store(nullptr); mumble = nullptr; api = nullptr; addonDirectory.clear(); packsDirectory.clear(); }
+void AppRuntime::Shutdown() { ApiKeyStorage::Shutdown(); identity.store(nullptr); mumble = nullptr; api = nullptr; addonDirectory.clear(); packsDirectory.clear(); }
 AddonAPI_t* AppRuntime::GetApi() { return api; }
 Mumble::Data* AppRuntime::GetMumble() { return mumble; }
 Mumble::Data* AppRuntime::GetPlayableMumble() {

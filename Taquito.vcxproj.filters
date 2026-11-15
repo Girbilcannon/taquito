@@ -34,6 +34,7 @@
     <ClCompile Include="src\UI\ControlHUD.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="src\UI\PresetsWindow.cpp"><Filter>UI</Filter></ClCompile>
     <ClCompile Include="src\Core\PathingState.cpp"><Filter>Core</Filter></ClCompile>
+    <ClCompile Include="src\Core\ApiKeyStorage.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="src\Core\AttributeRuntime.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="src\Core\CheckpointRuntime.cpp"><Filter>Core</Filter></ClCompile>
     <ClCompile Include="src\UI\MarkerInteractions.cpp"><Filter>UI</Filter></ClCompile>
@@ -74,6 +75,9 @@
       <Filter>Third Party\imgui</Filter>
     </ClCompile>
     <ClInclude Include="src\Core\AppRuntime.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Core\ApiKeyStorage.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="src\Core\AppSettings.h">
@@ -142,4 +146,6 @@
       <Filter>Resources</Filter>
     </Image>
   </ItemGroup>
+  <ItemGroup><ClInclude Include="src\third_party\good_render\good_render.h"><Filter>Third Party</Filter></ClInclude><ClInclude Include="src\Core\CategorySearch.h"><Filter>Core</Filter></ClInclude></ItemGroup>
+  <ItemGroup><ClCompile Include="src\Core\MapNames.cpp"><Filter>Core</Filter></ClCompile><ClInclude Include="src\Core\MapNames.h"><Filter>Core</Filter></ClInclude></ItemGroup>
 </Project>

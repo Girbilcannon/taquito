@@ -93,7 +93,8 @@ void PathingState::Update(const std::vector<TacoPack::Pack>& packs,const AppSett
         entry.import("name",jsonxx::Value(name));
         entry.import("loaded",jsonxx::Value(pack->loaded));
         std::vector<std::string> off;
-        for(const auto& [key,category]:pack->categories) if(!category->visible) off.push_back(key);
+        // Effective restrictions include the search filter; saved checkboxes stay untouched.
+        for(const auto& [key,category]:pack->categories) if(!category->visible || category->searchFiltered) off.push_back(key);
         std::sort(off.begin(),off.end());
         jsonxx::Array disabled;
         for(const auto& key:off) disabled.import(jsonxx::Value(key));

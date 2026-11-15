@@ -40,6 +40,8 @@
     <ClCompile Include="src\UI\ShortcutSettings.cpp" />
     <ClCompile Include="src\UI\PresetsWindow.cpp" />
     <ClCompile Include="src\Core\PathingState.cpp" />
+    <ClCompile Include="src\Core\ApiKeyStorage.cpp" />
+    <ClCompile Include="src\Core\MapNames.cpp" />
     <ClCompile Include="src\Core\AttributeRuntime.cpp" />
     <ClCompile Include="src\Core\CheckpointRuntime.cpp" />
     <ClCompile Include="src\UI\MarkerInteractions.cpp" />
@@ -59,6 +61,8 @@
     <ClInclude Include="src\Core\CheckpointRuntime.h" />
     <ClInclude Include="src\Core\CheckpointAttributes.h" />
     <ClInclude Include="src\Core\AtomicFile.h" />
+    <ClInclude Include="src\Core\ApiKeyStorage.h" />
+    <ClInclude Include="src\Core\MapNames.h" />
     <ClInclude Include="src\Core\AddonLifetime.h" />
     <ClInclude Include="src\UI\HudPlacement.h" />
     <ClInclude Include="src\UI\ControlHUD.h" /><ClInclude Include="src\UI\PieUITheme.h" />
@@ -77,4 +81,5 @@
   </ItemGroup>
   <ItemGroup><ResourceCompile Include="src\Taquito.rc" /><Image Include="src\Resources\taquito.png" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup><ClInclude Include="src\third_party\good_render\good_render.h" /><ClInclude Include="src\Core\CategorySearch.h" /></ItemGroup>
 </Project>

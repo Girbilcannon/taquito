@@ -76,6 +76,9 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
     // Missing option in older settings is an explicit opt-out on upgrade/reload.
     state.autoTriggerPieUIMaps=false;
     state.pieUIThemes=false;
+    state.goodRenderDepth=false;
+    state.searchEnabled=false;
+    state.filterByMap=false;
     state.controlHudEnabled=true;state.controlHudHorizontal=false;
     state.worldMarkerDistance=state.worldTrailDistance=1.0f;
     state.presetsEnabled=false;state.quickCloseMenu=false;state.shortcuts={};
@@ -146,6 +149,9 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
             else if (kind == "presetsEnabled") state.presetsEnabled=value;
             else if (kind == "quickCloseMenu") state.quickCloseMenu=value;
             else if (kind == "pieUIThemes") state.pieUIThemes=value;
+            else if (kind == "goodRenderDepth") state.goodRenderDepth=value;
+            else if (kind == "searchEnabled") state.searchEnabled=value;
+            else if (kind == "filterByMap") state.filterByMap=value;
             else if (kind == "controlHudEnabled") state.controlHudEnabled=value;
             else if (kind == "controlHudHorizontal") state.controlHudHorizontal=value;
             else if (kind == "showMarkerInfo") state.showMarkerInfo = value;
@@ -202,6 +208,9 @@ void AppSettings::Save(const std::filesystem::path& directory, const std::vector
     output << "clipboardMode " << static_cast<int>(settings.clipboardMode) << "\nshowMarkerInfo " << settings.showMarkerInfo << '\n';
     output << "autoTriggerPieUIMaps " << settings.autoTriggerPieUIMaps << '\n';
     output << "pieUIThemes " << settings.pieUIThemes << '\n';
+    output << "goodRenderDepth " << settings.goodRenderDepth << '\n';
+    output << "searchEnabled " << settings.searchEnabled << '\n';
+    output << "filterByMap " << settings.filterByMap << '\n';
     output << "controlHudEnabled " << settings.controlHudEnabled << "\ncontrolHudHorizontal " << settings.controlHudHorizontal << '\n';
     output << "worldMarkerDistance " << settings.worldMarkerDistance << "\nworldTrailDistance " << settings.worldTrailDistance << '\n';
     output << "world " << settings.world << "\nmini " << settings.mini << "\nbig " << settings.big << '\n';

@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <limits>
 #include <vector>
+#include <chrono>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "windowscodecs.lib")
@@ -33,8 +34,19 @@ struct Projection {
     Vec3 cam, forward, right, up;
     float cx = 0, cy = 0, focal = 0;
     bool valid = false;
+    const float* viewProjection=nullptr;
     float Depth(Vec3 p) const { return Dot(Sub(p,cam),forward); }
     bool Screen(Vec3 p, ImVec2& out) const {
+        if(viewProjection) {
+            if(!valid)return false;
+            const auto* matrix=viewProjection;
+            const float w=matrix[3]*p.x+matrix[7]*p.y+matrix[11]*p.z+matrix[15];
+            if(!std::isfinite(w) || w<=.05f)return false;
+            const float x=matrix[0]*p.x+matrix[4]*p.y+matrix[8]*p.z+matrix[12];
+            const float y=matrix[1]*p.x+matrix[5]*p.y+matrix[9]*p.z+matrix[13];
+            out={cx*(1+x/w),cy*(1-y/w)};
+            return std::isfinite(out.x)&&std::isfinite(out.y);
+        }
         auto rel = Sub(p, cam); float z = Dot(rel,forward);
         if (!valid || z <= .05f) return false;
         out = {cx + Dot(rel,right)*focal/z, cy - Dot(rel,up)*focal/z};
@@ -92,10 +104,17 @@ bool Clip(ImVec2& a, ImVec2& b, ImVec2 mn, ImVec2 mx) {
 float SignedArea(ImVec2 a,ImVec2 b,ImVec2 c) {
     return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
 }
+void SubmitWorldQuad(Renderer::WorldPass::Quad submit,const Vec3 (&points)[4],
+                     const float (*uv)[2],void* texture,ImU32 color) {
+    const float corners[4][3]={{points[0].x,points[0].y,points[0].z},{points[1].x,points[1].y,points[1].z},
+        {points[2].x,points[2].y,points[2].z},{points[3].x,points[3].y,points[3].z}};
+    submit(corners,uv,texture,color);
+}
 void GroundRibbon(ImDrawList* draw, const Projection& proj, Vec3 avatar, Vec3 a, Vec3 b,
                   float width, const TacoPack::Style& style, ID3D11ShaderResourceView* texture,
                   int imageWidth, int imageHeight, double phase, unsigned& budget,
-                  ImVec2 display, bool bubbleEnabled, float bubbleRadius, float bubbleFeather) {
+                  ImVec2 display, bool bubbleEnabled, float bubbleRadius, float bubbleFeather,
+                  Renderer::WorldPass::Quad worldQuad=nullptr) {
     const Vec3 delta=Sub(b,a);
     const double length=std::sqrt(static_cast<double>(Dot(delta,delta)));
     if (!(length>.001) || !std::isfinite(length)) return;
@@ -118,6 +137,8 @@ void GroundRibbon(ImDrawList* draw, const Projection& proj, Vec3 avatar, Vec3 a,
         const float alpha=opacity(Lerp(p,q,.5f));
         if (alpha<=.01f) return;
         const ImU32 color=Tint(style,alpha);
+        const Vec3 corners[4]={{p.x+ort.x,p.y+ort.y,p.z+ort.z},{q.x+ort.x,q.y+ort.y,q.z+ort.z},
+            {q.x-ort.x,q.y-ort.y,q.z-ort.z},{p.x-ort.x,p.y-ort.y,p.z-ort.z}};
         ImVec2 p1,p2,p3,p4;
         if (!proj.Screen({p.x+ort.x,p.y+ort.y,p.z+ort.z},p1) ||
             !proj.Screen({q.x+ort.x,q.y+ort.y,q.z+ort.z},p2) ||
@@ -131,15 +152,19 @@ void GroundRibbon(ImDrawList* draw, const Projection& proj, Vec3 avatar, Vec3 a,
         const float top=std::min({p1.y,p2.y,p3.y,p4.y}),bottom=std::max({p1.y,p2.y,p3.y,p4.y});
         if(right<0 || left>display.x || bottom<0 || top>display.y) return;
         if (!texture || !budget || imageWidth<=0 || imageHeight<=0) {
-            draw->AddQuadFilled(p1,p2,p3,p4,color);
+            if(worldQuad)SubmitWorldQuad(worldQuad,corners,nullptr,nullptr,color);
+            else draw->AddQuadFilled(p1,p2,p3,p4,color);
             return;
         }
         const double tile=VisualAttributes::WorldTrailBaseWidth;
         const double offset=std::fmod(std::fmod(phase+from,tile)+tile,tile);
         const float v0=static_cast<float>(1.0-offset/tile);
         const float v1=static_cast<float>(1.0-(offset+to-from)/tile);
-        draw->AddImageQuad(reinterpret_cast<ImTextureID>(texture),p1,p2,p3,p4,
-                           {0,v0},{0,v1},{1,v1},{1,v0},color);
+        if(worldQuad) {
+            const float uv[4][2]={{0,v0},{0,v1},{1,v1},{1,v0}};
+            SubmitWorldQuad(worldQuad,corners,uv,texture,color);
+        } else draw->AddImageQuad(reinterpret_cast<ImTextureID>(texture),p1,p2,p3,p4,
+                                 {0,v0},{0,v1},{1,v1},{1,v0},color);
         --budget;
     };
     auto solidRemainder=[&](double from) {
@@ -228,14 +253,23 @@ void Renderer::EndMapSampler(const ImDrawList*,const ImDrawCmd* command) {
     renderer->savedMapSampler_.Reset();
 }
 
-void Renderer::ClearTextures() { images_.clear(); }
+void Renderer::ClearTextures(const char* reason) {
+    if(!images_.empty()) { ++textureClears_; textureClearReason_=reason; }
+    images_.clear(); pendingTextures_.clear(); pendingTextureKeys_.clear();
+}
 void Renderer::RequestTextureClear() { clearTexturesNextFrame_ = true; }
-void Renderer::Shutdown() { ClearTextures(); savedMapSampler_.Reset(); mapSampler_.Reset(); device_.Reset(); api_=nullptr; }
+void Renderer::Shutdown() { ClearTextures("shutdown"); savedMapSampler_.Reset(); mapSampler_.Reset(); device_.Reset(); api_=nullptr; }
 Renderer::Image* Renderer::Texture(const TacoPack::Pack& pack, const std::string& name) {
     if (!device_ || name.empty()) return nullptr;
     auto key=pack.path.string()+"|"+name; auto found=images_.find(key); if(found!=images_.end()) return found->second.view ? &found->second : nullptr;
+    // A game-stage callback must never open archives, decode images or upload textures.
+    if(cachedTexturesOnly_) {
+        if(pendingTextureKeys_.insert(key).second)pendingTextures_.push_back({pack.path,name,key});
+        return nullptr;
+    }
     if (newTexturesThisFrame_ >= 2) return nullptr;
     ++newTexturesThisFrame_;
+    const auto loadStart=std::chrono::steady_clock::now();
     Image image;
     std::vector<unsigned char> bytes;
     if (TacoPack::ExtractAsset(pack.path,name,bytes)) {
@@ -269,6 +303,9 @@ Renderer::Image* Renderer::Texture(const TacoPack::Pack& pack, const std::string
         }
         if(SUCCEEDED(init)) CoUninitialize();
     }
+    if(image.view)++textureLoads_;else ++textureFailures_;
+    lastTextureLoadMs_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-loadStart).count();
+    maxTextureLoadMs_=std::max(maxTextureLoadMs_,lastTextureLoadMs_);
     auto [it,inserted]=images_.emplace(key,std::move(image)); return it->second.view ? &it->second : nullptr;
 }
 void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data* m,
@@ -276,37 +313,72 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                     float miniIconSize, float bigIconSize, float miniTrailSize, float bigTrailSize,
                     float worldIconSize, float worldTrailSize,
                     bool playerBubble, float bubbleRadius, float bubbleFeather, bool blishMapTrails,
-                    float worldMarkerDistance,float worldTrailDistance) {
+                    float worldMarkerDistance,float worldTrailDistance,const WorldPass* worldPass) {
     // ImGui stores raw SRV pointers in its draw list. A menu click later in the
     // same frame must not release a texture until those commands are consumed.
-    if (clearTexturesNextFrame_) { ClearTextures(); clearTexturesNextFrame_ = false; }
-    worldTrailSegments_ = 0;
-    newTexturesThisFrame_ = 0;
+    cachedTexturesOnly_=worldPass && worldPass->cachedTexturesOnly;
+    const bool worldGeometry=!worldPass || worldPass->geometry;
+    const bool screenOverlays=!worldPass || worldPass->screenOverlays;
+    const auto worldQuad=worldPass ? worldPass->worldQuad : nullptr;
+    if(worldGeometry)worldTrailSegments_ = 0;
     const uint32_t map=m && m->UITick ? m->Context.MapID : 0;
     // Include loss of the playable map: release resources before returning.
     // This runs at frame start, before any new SRV draw commands are queued.
-    if(map != lastMap_ || (!map && !images_.empty())) { ClearTextures(); lastMap_=map; }
+    if(cachedTexturesOnly_) {
+        // Cache maintenance belongs to the normal Nexus pass, after the service
+        // has consumed its earlier draw list. Do not use a previous map's cache.
+        if(clearTexturesNextFrame_ || map!=lastMap_)return;
+    } else {
+        newTexturesThisFrame_=0;
+        if(clearTexturesNextFrame_) { ClearTextures("pack reload"); clearTexturesNextFrame_=false; }
+        if(map!=lastMap_ || (!map && !images_.empty())) { ClearTextures(map ? "map changed" : "map unavailable"); lastMap_=map; }
+        // Warm requests made by the earlier callback; share the existing two-load
+        // frame budget with normal map/sticky/fallback rendering.
+        while(map && !pendingTextures_.empty() && newTexturesThisFrame_<2) {
+            auto request=std::move(pendingTextures_.front());pendingTextures_.pop_front();
+            pendingTextureKeys_.erase(request.key);
+            TacoPack::Pack pack;pack.path=std::move(request.pack);
+            Texture(pack,request.name);
+        }
+    }
     if(!map || !device_) return;
     unsigned worldTileBudget = 4096; // World rendering retains its existing tile limit.
-    auto io=ImGui::GetIO(); auto* draw=ImGui::GetBackgroundDrawList();
-    const Vec3 avatar=V(m->AvatarPosition),cam=V(m->CameraPosition);
-    Projection proj; proj.cam=cam; proj.forward=Normal(V(m->CameraFront));
-    proj.right=Normal(Cross({0,1,0},proj.forward)); proj.up=Normal(Cross(proj.forward,proj.right));
+    auto io=ImGui::GetIO(); auto* draw=worldPass && worldPass->drawList ? worldPass->drawList : ImGui::GetBackgroundDrawList();
+    const auto* frameCamera=worldPass ? worldPass->camera : nullptr;
+    const Vec3 avatar=V(m->AvatarPosition),cam=frameCamera ? frameCamera->position : V(m->CameraPosition);
+    Projection proj; proj.cam=cam; proj.forward=Normal(frameCamera ? frameCamera->front : V(m->CameraFront));
+    proj.right=Normal(Cross(frameCamera ? frameCamera->up : Vec3{0,1,0},proj.forward));
+    if(frameCamera && Dot(proj.right,proj.right)<.5f)
+        proj.right=Normal(Cross(std::abs(proj.forward.y)>.9f ? Vec3{0,0,1} : Vec3{0,1,0},proj.forward));
+    proj.up=Normal(Cross(proj.forward,proj.right));
     proj.cx=io.DisplaySize.x*.5f; proj.cy=io.DisplaySize.y*.5f;
     // Use the live vertical FOV for world projection whenever Mumble provides it.
-    const float fov = identity && std::isfinite(identity->FOV) && identity->FOV > .1f && identity->FOV < Pi-.1f
-        ? identity->FOV : DefaultFovRadians;
+    const float fov = frameCamera ? frameCamera->fov :
+        identity && std::isfinite(identity->FOV) && identity->FOV > .1f && identity->FOV < Pi-.1f ? identity->FOV : DefaultFovRadians;
     proj.focal=io.DisplaySize.y*.5f/std::tan(fov*.5f);
     proj.valid=Dot(proj.forward,proj.forward)>.5f && Dot(proj.right,proj.right)>.5f;
+    if(frameCamera) {
+        proj.viewProjection=frameCamera->viewProjection;
+        // A supplied matrix also handles looking straight up/down; no derived
+        // world-up cross product is needed for its screen projection.
+        proj.valid=frameCamera->viewProjection && Dot(proj.forward,proj.forward)>.5f;
+    }
     const float ui=identity ? UIScale(identity->UISize) : 1;
+    // Nexus reports effective UI scaling. Do not multiply by ui a second time.
+    float mapUI=ui;
+    if(!m->Context.IsMapOpen && api_ && api_->DataLink_Get) {
+        const auto* link=static_cast<const NexusLinkData_t*>(api_->DataLink_Get(DL_NEXUS_LINK));
+        if(link && std::isfinite(link->Scaling) && link->Scaling>=.25f && link->Scaling<=8.0f)mapUI=link->Scaling;
+    }
+    if(!cachedTexturesOnly_ && !m->Context.IsMapOpen)minimapUIScale_=mapUI;
     const auto& c=m->Context.Compass;
     MapProjection mp;
     if(c.Scale>.001f && c.Width>0 && c.Height>0) {
-        mp.avatar=avatar; mp.scale=ui/c.Scale;
+        mp.avatar=avatar; mp.scale=mapUI/c.Scale;
         mp.rotation=m->Context.IsCompassRotating && !m->Context.IsMapOpen ? c.Rotation : 0;
         mp.offset={c.Center.X-c.PlayerPosition.X,c.Center.Y-c.PlayerPosition.Y};
         if(m->Context.IsMapOpen) { mp.min={0,0}; mp.max=io.DisplaySize; }
-        else { float w=c.Width*ui,h=c.Height*ui; float bottom=(identity && identity->UISize==Mumble::EUIScale::Small ? 33.0f:37.0f)*ui;
+        else { float w=c.Width*mapUI,h=c.Height*mapUI; float bottom=(identity && identity->UISize==Mumble::EUIScale::Small ? 33.0f:37.0f)*mapUI;
             mp.min={io.DisplaySize.x-w,m->Context.IsCompassTopRight ? 1.0f : io.DisplaySize.y-h-bottom};
             mp.max={io.DisplaySize.x,mp.min.y+h}; }
         mp.center={(mp.min.x+mp.max.x)*.5f,(mp.min.y+mp.max.y)*.5f}; mp.valid=true;
@@ -315,7 +387,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
     const float mapTrailMultiplier = m->Context.IsMapOpen ? bigTrailSize : miniTrailSize;
     const auto mapDisplaySize = [&](const TacoPack::Style& style,float multiplier) {
         const float zoom = style.scaleWithZoom ? 1.0f/c.Scale : 1.0f;
-        return style.mapSize * zoom * ui * multiplier;
+        return style.mapSize * zoom * mapUI * multiplier;
     };
     // Pick the screen copy before drawing world markers so only the displayed
     // copy can hide its original. World fade is independent of sticky range.
@@ -349,7 +421,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                 if(!img) continue;
                 const ImU32 lineColor=blishMapTrails ?
                     Tint(MapTrailVisuals::LineColor(img->mapColor,CheckpointRuntime::Tint(t,t.style.tint)),t.style.alpha) : 0;
-                const float lineWidth=blishMapTrails ? MapTrailVisuals::LineWidth(ui,mapTrailMultiplier) : 0;
+                const float lineWidth=blishMapTrails ? MapTrailVisuals::LineWidth(mapUI,mapTrailMultiplier) : 0;
                 draw->PushClipRect(mp.min,mp.max,true);
                 for(const auto& strip:t.strips) {
                     double phase=0;
@@ -378,9 +450,10 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
         }
         for(const auto& t:pack.trails) {
             if(t.map!=map || !AttributeRuntime::Visible(t)) continue;
-            bool inWorld=world && proj.valid && t.style.inWorld && !m->Context.IsMapOpen;
+            bool inWorld=world && worldGeometry && proj.valid && t.style.inWorld && !m->Context.IsMapOpen;
             if(!inWorld) continue;
             Image* img=Texture(pack,t.texture); auto* texture=img ? img->view.Get():nullptr;
+            if(cachedTexturesOnly_ && !img)continue;
             // The map clip applies only to map geometry. Applying it before
             // the world pass clipped every visible world trail to the compass.
             auto trailStyle=t.style;trailStyle.tint=CheckpointRuntime::Tint(t,t.style.tint);
@@ -409,7 +482,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                             trailStyle,texture,img ? img->width : 0,img ? img->height : 0,
                             segmentPhase+std::sqrt(static_cast<double>(Dot(Sub(start,strip[i-1]),Sub(start,strip[i-1]))))
                                 + VisualAttributes::AnimationOffset(ImGui::GetTime(),t.style.animSpeed,tile),
-                            worldTileBudget,io.DisplaySize,playerBubble,bubbleRadius,bubbleFeather);
+                            worldTileBudget,io.DisplaySize,playerBubble,bubbleRadius,bubbleFeather,worldQuad);
                     }
                 }
             }
@@ -417,16 +490,29 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
         }
         for(const auto& p:pack.markers) {
             if(p.map!=map || !AttributeRuntime::Visible(p)) continue;
-            bool inWorld=world && proj.valid && p.style.inWorld && !m->Context.IsMapOpen &&
+            bool inWorld=world && worldGeometry && proj.valid && p.style.inWorld && !m->Context.IsMapOpen &&
                 !(&p==stickyMarker && p.style.stickyHideOriginal);
             bool onMap=mp.valid && (m->Context.IsMapOpen ? big && p.style.bigMap : mini && p.style.miniMap);
             if(!inWorld && !onMap) continue;
             const auto markerTint=CheckpointRuntime::Tint(p,p.style.tint);
             Image* image=Texture(pack,p.asset);
+            if(cachedTexturesOnly_ && !image)continue;
             auto drawMarker=[&](ImVec2 pos,float half,float alpha,bool worldFacing=false) {
                 if(alpha<=.01f) return;
                 // Camera-facing quads always have clockwise screen winding.
                 if(worldFacing && VisualAttributes::Culled(p.style.cull,1.0f))return;
+                if(worldFacing && worldQuad && image) {
+                    Vec3 center=p.position;center.y+=p.style.height+AttributeRuntime::BounceOffset(p);
+                    const float halfWorld=half*proj.Depth(center)/proj.focal;
+                    const Vec3 right={proj.right.x*halfWorld,proj.right.y*halfWorld,proj.right.z*halfWorld};
+                    const Vec3 up={proj.up.x*halfWorld,proj.up.y*halfWorld,proj.up.z*halfWorld};
+                    const Vec3 corners[4]={{center.x-right.x+up.x,center.y-right.y+up.y,center.z-right.z+up.z},
+                        {center.x+right.x+up.x,center.y+right.y+up.y,center.z+right.z+up.z},
+                        {center.x+right.x-up.x,center.y+right.y-up.y,center.z+right.z-up.z},
+                        {center.x-right.x-up.x,center.y-right.y-up.y,center.z-right.z-up.z}};
+                    SubmitWorldQuad(worldQuad,corners,nullptr,image->view.Get(),Tint(markerTint,alpha));
+                    return;
+                }
                 if(image) draw->AddImage(reinterpret_cast<ImTextureID>(image->view.Get()),{pos.x-half,pos.y-half},{pos.x+half,pos.y+half},{0,0},{1,1},Tint(markerTint,alpha));
                 else draw->AddCircleFilled(pos,std::max(half,3.0f),Tint(markerTint,alpha));
             };
@@ -439,16 +525,19 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                     // XML rotation is Z-up; convert only the rotated image offsets
                     // to Mumble's Y-up world. Sticky/map images use their own placement.
                     float half=VisualAttributes::WorldMarkerHalfSize(proj.focal,depth,p.style,worldIconSize)*depth/proj.focal;
-                    ImVec2 corners[4];
+                    ImVec2 corners[4];Vec3 worldCorners[4];
                     const Vec3 local[4]={{-half,half,0},{half,half,0},{half,-half,0},{-half,-half,0}};
                     bool valid=true;
                     for (int i=0;i<4;++i) {
                         const Vec3 r=VisualAttributes::WorldMarkerOffset(local[i],p.style.rotation);
-                        valid &= proj.Screen({point.x+r.x,point.y+r.y,point.z+r.z},corners[i]);
+                        worldCorners[i]={point.x+r.x,point.y+r.y,point.z+r.z};
+                        valid &= proj.Screen(worldCorners[i],corners[i]);
                     }
-                    if (valid && !VisualAttributes::Culled(p.style.cull,SignedArea(corners[0],corners[1],corners[2])))
-                        draw->AddImageQuad(reinterpret_cast<ImTextureID>(image->view.Get()),
-                        corners[0],corners[1],corners[2],corners[3],{0,0},{1,0},{1,1},{0,1},Tint(markerTint,opacity));
+                    if (valid && !VisualAttributes::Culled(p.style.cull,SignedArea(corners[0],corners[1],corners[2]))) {
+                        if(worldQuad)SubmitWorldQuad(worldQuad,worldCorners,nullptr,image->view.Get(),Tint(markerTint,opacity));
+                        else draw->AddImageQuad(reinterpret_cast<ImTextureID>(image->view.Get()),
+                            corners[0],corners[1],corners[2],corners[3],{0,0},{1,0},{1,1},{0,1},Tint(markerTint,opacity));
+                    }
                 } else if(proj.Screen(point,screen) && screen.x>=-200 && screen.y>=-200 && screen.x<=io.DisplaySize.x+200 && screen.y<=io.DisplaySize.y+200)
                     drawMarker(screen,VisualAttributes::WorldMarkerHalfSize(proj.focal,depth,p.style,worldIconSize),opacity,true);
             }
@@ -464,7 +553,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
             }
         }
     }
-    if (hoveredMarker) {
+    if (screenOverlays && hoveredMarker) {
         const auto* title=TacoPack::Attribute(hoveredMarker->style,"tip-name");
         const auto* detail=TacoPack::Attribute(hoveredMarker->style,"tip-description");
         // An explicitly empty title disables the tooltip, as in Pathing.
@@ -480,7 +569,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
             ImGui::EndTooltip();
         }
     }
-    if(stickyMarker && stickyImage) {
+    if(screenOverlays && stickyMarker && stickyImage) {
         Image* image=stickyImage;
         if(image && io.DisplaySize.x > 0 && io.DisplaySize.y > 0) {
             const auto& style=stickyMarker->style;

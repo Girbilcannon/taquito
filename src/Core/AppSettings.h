@@ -18,6 +18,9 @@ namespace AppSettings {
         bool presetsEnabled=false;
         bool quickCloseMenu=false;
         bool pieUIThemes=false;
+        bool goodRenderDepth=false;
+        bool searchEnabled=false;
+        bool filterByMap=false;
         bool controlHudEnabled=true,controlHudHorizontal=false;
         float worldMarkerDistance=1.0f,worldTrailDistance=1.0f;
         std::array<Shortcut,4> shortcuts{}; // Legacy migration defaults only; Nexus owns active keybinds.

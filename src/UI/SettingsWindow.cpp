@@ -1,10 +1,13 @@
 #include "../Core/PieUIBridge.h"
 #include "SettingsWindow.h"
+#include "QuickMenu.h"
 #include "PackBrowserWindow.h"
 #include "../Core/Presets.h"
 #include "OverlayRenderer.h"
 #include "../Core/AppRuntime.h"
 #include "../Core/AppSettings.h"
+#include "../Core/ApiKeyStorage.h"
+#include "../Core/MapNames.h"
 #include "../Core/PathingState.h"
 #include "../Core/OnlinePacks.h"
 #include "../Core/AttributeRuntime.h"
@@ -16,21 +19,73 @@
 #include <shellapi.h>
 #include <cmath>
 #include <cfloat>
+#include <array>
+#include <algorithm>
 
 #pragma comment(lib, "shell32.lib")
 
 namespace {
 bool shown=false;
 bool resetDiagnostics=true;
+std::array<char,512> apiKeyDraft{};
+bool apiKeyDraftReady=false;
+ImGuiID apiKeyWidget=0;
+void ClearApiKeyDraft() {
+    SecureZeroMemory(apiKeyDraft.data(),apiKeyDraft.size());
+    // ImGui keeps its own edit/undo buffers after an input loses focus.
+    // Wipe only this widget's state; never disturb another addon's input.
+    if(auto* context=ImGui::GetCurrentContext();context && apiKeyWidget && context->InputTextState.ID==apiKeyWidget) {
+        auto& edit=context->InputTextState;
+        if(edit.TextW.Data)SecureZeroMemory(edit.TextW.Data,static_cast<size_t>(edit.TextW.Capacity)*sizeof(ImWchar));
+        if(edit.TextA.Data)SecureZeroMemory(edit.TextA.Data,static_cast<size_t>(edit.TextA.Capacity));
+        if(edit.InitialTextA.Data)SecureZeroMemory(edit.InitialTextA.Data,static_cast<size_t>(edit.InitialTextA.Capacity));
+        SecureZeroMemory(&edit.Stb,sizeof(edit.Stb));
+        if(context->ActiveId==apiKeyWidget)ImGui::ClearActiveID();
+        edit.ClearFreeMemory();edit.ID=0;
+    }
+    apiKeyWidget=0;
+    apiKeyDraftReady=false;
 }
-void SettingsWindow::Open() { shown=true; resetDiagnostics=true; }
-void SettingsWindow::Close() { shown=false; }
+void LoadApiKeyDraft() {
+    ClearApiKeyDraft();
+    auto key=ApiKeyStorage::CopyKey();
+    std::copy_n(key.data(),std::min(key.size(),apiKeyDraft.size()-1),apiKeyDraft.data());
+    if(!key.empty())SecureZeroMemory(key.data(),key.size());
+    apiKeyDraftReady=true;
+}
+[[maybe_unused]] void RenderApiKeySettings() {
+    if(!ImGui::CollapsingHeader("API Key"))return;
+    if(!apiKeyDraftReady)LoadApiKeyDraft();
+    // Reserved provider switch: never persisted or enabled before Keychain exists.
+    bool useKeychain=false;
+    ImGui::PushItemFlag(ImGuiItemFlags_Disabled,true);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha,ImGui::GetStyle().Alpha*.5f);
+    ImGui::Checkbox("Use API Keychain addon",&useKeychain);
+    ImGui::PopStyleVar();ImGui::PopItemFlag();
+    ImGui::SameLine();ImGui::TextDisabled("(not yet available)");
+    ImGui::SetNextItemWidth(-1);
+    apiKeyWidget=ImGui::GetID("##TaquitoApiKey");
+    ImGui::InputTextWithHint("##TaquitoApiKey","API key",apiKeyDraft.data(),apiKeyDraft.size(),ImGuiInputTextFlags_Password);
+    if(ImGui::Button("Save##TaquitoApiKey")) {
+        if(ApiKeyStorage::Save(apiKeyDraft.data()))LoadApiKeyDraft();
+    }
+    ImGui::SameLine();
+    if(ImGui::Button("Remove##TaquitoApiKey")) {
+        if(ApiKeyStorage::Remove())ClearApiKeyDraft();
+    }
+    if(!ApiKeyStorage::Status().empty())ImGui::TextWrapped("%s",ApiKeyStorage::Status().c_str());
+    ImGui::Spacing();
+}
+}
+void SettingsWindow::Open() { shown=true; resetDiagnostics=true; ClearApiKeyDraft(); }
+void SettingsWindow::Close() { shown=false; ClearApiKeyDraft(); }
 void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Renderer& renderer,
                             bool loading, void (*reload)(), void (*save)()) {
-    if(!shown) return;
+    if(!shown) {if(apiKeyDraftReady)ClearApiKeyDraft();return;}
     ImGui::SetNextWindowSize({620,440},ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSizeConstraints({520,320},{FLT_MAX,FLT_MAX});
     if(!ImGui::Begin("Taquito Settings##Taquito",&shown)) {
+        if(!shown)ClearApiKeyDraft();
         ImGui::End(); return;
     }
     const auto& folder=AppRuntime::GetPacksDirectory();
@@ -40,6 +95,10 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
     ImGui::Spacing();
     if(!Presets::Status().empty())ImGui::TextWrapped("%s",Presets::Status().c_str());
     if(ImGui::CollapsingHeader("Display",ImGuiTreeNodeFlags_DefaultOpen)) {
+        const bool depthAvailable=QuickMenu::GoodRenderAvailable();
+        if(!depthAvailable) { ImGui::PushItemFlag(ImGuiItemFlags_Disabled,true); ImGui::PushStyleVar(ImGuiStyleVar_Alpha,ImGui::GetStyle().Alpha*.5f); }
+        changed |= ImGui::Checkbox("Terrain occlusion (Good Render)",&settings.goodRenderDepth);
+        if(!depthAvailable) { ImGui::PopStyleVar(); ImGui::PopItemFlag(); }
         changed |= ImGui::Checkbox("Rendering enabled",&settings.renderingEnabled);
         changed |= ImGui::Checkbox("In-world markers and trails",&settings.world);
         changed |= ImGui::Checkbox("Minimap markers and trails",&settings.mini);
@@ -92,6 +151,17 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
         if(ImGui::IsItemHovered())ImGui::SetTooltip("Returns Info and Copy HUDs to their default screen positions.");
         if(ImGui::Button("Reset activated marker state"))AttributeRuntime::ResetBehavior();
         if(ImGui::IsItemHovered())ImGui::SetTooltip("Clears Taquito's behavior timers and session activations, including permanent markers. Category checkboxes are preserved.");
+        ImGui::Spacing();
+    }
+    // Manual key storage remains intact; hide its UI until API features are ready.
+    if(ImGui::CollapsingHeader("Search")) {
+        changed |= ImGui::Checkbox("Filter by Map",&settings.filterByMap);
+        changed |= ImGui::Checkbox("Enable Search",&settings.searchEnabled);
+        ImGui::PushItemFlag(ImGuiItemFlags_Disabled,true);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha,ImGui::GetStyle().Alpha*.5f);
+        int searchType=0;
+        ImGui::Combo("Search type (more in a later patch)",&searchType,"Full Path\0\0");
+        ImGui::PopStyleVar();ImGui::PopItemFlag();
         ImGui::Spacing();
     }
     if(ImGui::CollapsingHeader("Menu and Appearance")) {
@@ -148,6 +218,16 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
         resetDiagnostics=false;
     }
     if(ImGui::CollapsingHeader("Diagnostics##TaquitoDiagnostics")) {
+        ImGui::Text("Good Render: %s",QuickMenu::GoodRenderAvailable() ? "available" : "unavailable (Nexus fallback)");
+        ImGui::Text("Terrain occlusion: %s",QuickMenu::GoodRenderDepthLastFrame() ? "active" : "inactive");
+        ImGui::Text("Minimap UI scale: %.3fx",renderer.MinimapUIScale());
+        if(settings.filterByMap)ImGui::Text("Map lookup: %s",MapNames::Status().c_str());
+        ImGui::Text("Textures: %zu cached, %zu pending; loads: %llu; failures: %llu",renderer.CachedTextures(),renderer.PendingTextures(),
+            static_cast<unsigned long long>(renderer.TextureLoads()),static_cast<unsigned long long>(renderer.TextureFailures()));
+        ImGui::Text("Texture clears: %llu (%s); load time: %.2f ms; peak: %.2f ms",
+            static_cast<unsigned long long>(renderer.TextureClears()),renderer.TextureClearReason(),renderer.LastTextureLoadMs(),renderer.MaxTextureLoadMs());
+        ImGui::Text("World passes: %llu; last frame: %s",static_cast<unsigned long long>(QuickMenu::GoodRenderWorldPasses()),
+            QuickMenu::GoodRenderUsedLastFrame() ? "Good Render" : "Nexus / no world pass");
         const auto checkpoints=CheckpointRuntime::GetDiagnostics();
         ImGui::Text("Checkpoints: %zu nodes, %zu runs (%zu blocked, %zu finished)",checkpoints.nodes,checkpoints.runs,checkpoints.blockedRuns,checkpoints.completedRuns);
         ImGui::Text("Checkpoint contacts: %llu; resets: %llu",static_cast<unsigned long long>(checkpoints.contacts),static_cast<unsigned long long>(checkpoints.resets));
