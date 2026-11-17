@@ -75,7 +75,7 @@ inline void Populate(TacoPack::Style& style) {
     CheckpointAttributes::Populate(style);
 }
 inline bool Actionable(const TacoPack::Style& s) {
-    return !s.resetGuids.empty() || (!s.cpReset.empty() && s.cpResetActivationAllowed) || !s.copy.empty() || !s.showCategory.empty() || !s.hideCategory.empty() || !s.toggleCategory.empty() ||
+    return !s.resetGuids.empty() || (!s.cpFinish && !s.cpReset.empty() && s.cpResetActivationAllowed) || !s.copy.empty() || !s.showCategory.empty() || !s.hideCategory.empty() || !s.toggleCategory.empty() ||
         s.behavior==1 || s.behavior==2 || s.behavior==3 || s.behavior==4 || s.behavior==6 || s.behavior==7 || s.behavior==101;
 }
 inline std::string Message(const std::string& text,const std::string& custom) {
@@ -101,6 +101,7 @@ class Proximity {
     std::unordered_set<const TacoPack::Marker*> infoInside_;
     uint32_t map_=0;
     bool baseline_=false;
+    TacoPack::Vec3 previous_{};
 public:
     void Reset() {inside_.clear();infoInside_.clear();map_=0;baseline_=false;}
     bool IsInfoInside(const TacoPack::Marker* marker) const {return infoInside_.count(marker)!=0;}
@@ -108,6 +109,9 @@ public:
         Selection selected;
         if(!active || !map) {Reset();return selected;}
         if(map_!=map) {Reset();map_=map;}
+        const double dx=double(player.x)-previous_.x,dy=double(player.y)-previous_.y,dz=double(player.z)-previous_.z;
+        if(!std::isfinite(dx*dx+dy*dy+dz*dz)||dx*dx+dy*dy+dz*dz>200.*200.)baseline_=false;
+        previous_=player;
         std::unordered_set<const TacoPack::Marker*> inside;
         std::unordered_set<const TacoPack::Marker*> infoInside;
         double infoDistance=std::numeric_limits<double>::infinity(),copyDistance=infoDistance,autoDistance=infoDistance,actionDistance=infoDistance;

@@ -165,6 +165,7 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
         ImGui::Spacing();
     }
     if(ImGui::CollapsingHeader("Menu and Appearance")) {
+        changed |= ImGui::Checkbox("Enable Lua Script Alerts",&settings.luaScriptAlerts);
         const bool piePresent=PieUIBridge::Present();
         if(!piePresent){ImGui::PushItemFlag(ImGuiItemFlags_Disabled,true);ImGui::PushStyleVar(ImGuiStyleVar_Alpha,ImGui::GetStyle().Alpha*0.5f);}
         if(ImGui::Checkbox("Enable Pie UI Themes",&settings.pieUIThemes)) {
@@ -229,6 +230,7 @@ void SettingsWindow::Render(const std::vector<TacoPack::Pack>& packs, const Rend
         ImGui::Text("World passes: %llu; last frame: %s",static_cast<unsigned long long>(QuickMenu::GoodRenderWorldPasses()),
             QuickMenu::GoodRenderUsedLastFrame() ? "Good Render" : "Nexus / no world pass");
         const auto checkpoints=CheckpointRuntime::GetDiagnostics();
+        const auto checkpointStatus=CheckpointRuntime::Status();if(!checkpointStatus.empty())ImGui::TextWrapped("%s",checkpointStatus.c_str());
         ImGui::Text("Checkpoints: %zu nodes, %zu runs (%zu blocked, %zu finished)",checkpoints.nodes,checkpoints.runs,checkpoints.blockedRuns,checkpoints.completedRuns);
         ImGui::Text("Checkpoint contacts: %llu; resets: %llu",static_cast<unsigned long long>(checkpoints.contacts),static_cast<unsigned long long>(checkpoints.resets));
         const auto behaviorStatus=AttributeRuntime::Status();

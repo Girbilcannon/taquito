@@ -55,7 +55,7 @@ public:
               float worldIconSize, float worldTrailSize,
               bool playerBubble, float bubbleRadius, float bubbleFeather, bool blishMapTrails = false,
               float worldMarkerDistance=1.0f,float worldTrailDistance=1.0f,
-              const WorldPass* worldPass=nullptr);
+              const WorldPass* worldPass=nullptr,float verticalOffset=0);
 private:
     static void BeginMapSampler(const ImDrawList*,const ImDrawCmd*);
     static void EndMapSampler(const ImDrawList*,const ImDrawCmd*);

@@ -64,22 +64,22 @@ struct Style {
     void V(ImGuiStyleVar key,ImVec2 value){ImGui::PushStyleVar(key,value);++vars;}
     ~Style(){ImGui::PopStyleVar(vars);ImGui::PopStyleColor(ImGuiCol_COUNT);}
 };
-bool Number(float& value,float maximum,float width=72) {
+bool Number(float& value,float maximum,float width=72,float minimum=.25f,float reset=1,const char*format="%.2fx") {
     ImGui::SetNextItemWidth(width);
-    const bool changed=ImGui::InputFloat("##number",&value,0,0,"%.2fx");
-    if(changed)value=std::isfinite(value)?std::clamp(value,.25f,maximum):1;
+    const bool changed=ImGui::InputFloat("##number",&value,0,0,format);
+    if(changed)value=std::isfinite(value)?std::clamp(value,minimum,maximum):reset;
     return changed;
 }
 void DistanceTip(){if(ImGui::IsItemHovered())ImGui::SetTooltip("Moves the fade start and keeps its width. Missing fade values use 3000-3500 game inches. 1x uses the base range.");}
-bool Slider(const char* label,float& value,float maximum,bool distance=false) {
+bool Slider(const char* label,float& value,float maximum,bool distance=false,float minimum=.25f,float reset=1,const char*format="%.2fx") {
     ImGui::PushID(label);ImGui::TextUnformatted(label);
     ImGui::SetNextItemWidth(174);
-    bool changed=ImGui::SliderFloat("##slider",&value,.25f,maximum,"");
+    bool changed=ImGui::SliderFloat("##slider",&value,minimum,maximum,"",minimum<0?ImGuiSliderFlags_AlwaysClamp:ImGuiSliderFlags_None);
     if(distance)DistanceTip();
-    ImGui::SameLine();changed|=Number(value,maximum,76);
+    ImGui::SameLine();changed|=Number(value,maximum,76,minimum,reset,format);
     ImGui::PopID();return changed;
 }
-bool Dial(const Style& skin,const char* label,float& value,float maximum,bool distance=false) {
+bool Dial(const Style& skin,const char* label,float& value,float maximum,bool distance=false,float minimum=.25f,float reset=1,const char*format="%.2fx") {
     ImGui::PushID(label);ImGui::BeginGroup();
     const float x=ImGui::GetCursorPosX();
     ImGui::SetCursorPosX(x+(DialWidth-DialSize)*.5f);
@@ -89,13 +89,13 @@ bool Dial(const Style& skin,const char* label,float& value,float maximum,bool di
     bool changed=false;
     if(ImGui::IsItemActive()&&ImGui::IsMouseDragging(0,0)) {
         const auto delta=ImGui::GetIO().MouseDelta;
-        const float next=std::clamp(value+(delta.x-delta.y)*(maximum-.25f)/200,.25f,maximum);
+        const float next=std::clamp(value+(delta.x-delta.y)*(maximum-minimum)/200,minimum,maximum);
         if(next!=value){value=next;changed=true;}
     }
-    if(ImGui::IsItemHovered()&&ImGui::IsMouseDoubleClicked(0)){value=1;changed=true;}
+    if(ImGui::IsItemHovered()&&ImGui::IsMouseDoubleClicked(0)){value=reset;changed=true;}
     if(distance)DistanceTip();
     auto* draw=ImGui::GetWindowDrawList();
-    const float angle=.75f*Pi+std::clamp((value-.25f)/(maximum-.25f),0.0f,1.0f)*1.5f*Pi;
+    const float angle=.75f*Pi+std::clamp((value-minimum)/(maximum-minimum),0.0f,1.0f)*1.5f*Pi;
     draw->AddCircleFilled(center,19,skin.dialFill,32);
     draw->PathArcTo(center,17,.75f*Pi,2.25f*Pi,32);draw->PathStroke(skin.dialBase,false,2);
     draw->PathArcTo(center,17,.75f*Pi,angle,32);draw->PathStroke(skin.dialActive,false,2);
@@ -107,7 +107,7 @@ bool Dial(const Style& skin,const char* label,float& value,float maximum,bool di
         ImGui::SetCursorPosX(x+(DialWidth-textWidth)*.5f);ImGui::TextUnformatted(line,end);
         if(!*end)break;line=end+1;
     }
-    ImGui::SetCursorPosX(x);changed|=Number(value,maximum,DialWidth);
+    ImGui::SetCursorPosX(x);changed|=Number(value,maximum,DialWidth,minimum,reset,format);
     ImGui::EndGroup();ImGui::PopID();return changed;
 }
 void Heading(const Style& skin,const char* label) {ImGui::TextColored(skin.heading,"%s",label);}
@@ -116,7 +116,7 @@ bool Panel(const Style& skin,const char* name,bool& visible,float& scale,bool wo
     ImGui::PushID(name);ImGui::BeginGroup();
     const float x=ImGui::GetCursorPosX(),top=ImGui::GetCursorPosY();
     const float checkboxWidth=ImGui::GetFrameHeight()+ImGui::GetStyle().ItemInnerSpacing.x+ImGui::CalcTextSize("Visibility").x;
-    const float width=world?3*DialWidth+2*ImGui::GetStyle().ItemSpacing.x:std::max(DialWidth,checkboxWidth);
+    const float width=world?4*DialWidth+3*ImGui::GetStyle().ItemSpacing.x:std::max(DialWidth,checkboxWidth);
     if(horizontal){ImGui::Dummy({width,0});ImGui::SetCursorPosY(top);ImGui::SetCursorPosX(x+(width-ImGui::CalcTextSize(name).x)*.5f);}
     Heading(skin,name);
     if(horizontal)ImGui::SetCursorPosX(x+(width-checkboxWidth)*.5f);
@@ -126,9 +126,11 @@ bool Panel(const Style& skin,const char* name,bool& visible,float& scale,bool wo
         if(world){changed|=Dial(skin,"Marker\nDistance",settings.worldMarkerDistance,4,true);ImGui::SameLine();
             changed|=Dial(skin,"Trail\nDistance",settings.worldTrailDistance,4,true);ImGui::SameLine();}
         changed|=Dial(skin,"Marker\nScale",scale,3);
+        if(world){ImGui::SameLine();changed|=Dial(skin,"Vertical\nOffset",settings.worldVerticalOffset,2,false,-2,0,"%.2f m");}
     } else {
         if(world){changed|=Slider("Marker Distance",settings.worldMarkerDistance,4,true);changed|=Slider("Trail Distance",settings.worldTrailDistance,4,true);}
         changed|=Slider("Marker Scale",scale,3);
+        if(world)changed|=Slider("Vertical Offset",settings.worldVerticalOffset,2,false,-2,0,"%.2f m");
     }
     ImGui::EndGroup();ImGui::PopID();return changed;
 }
@@ -147,7 +149,7 @@ void ControlHUD::Render(void (*save)()) {
     const float fontScale=ImGui::GetFont()->FontSize*ImGui::GetIO().FontGlobalScale;
     ImGui::SetWindowFontScale(fontScale>0?14.0f/fontScale:1);
     if(visible) {
-        const bool horizontal=settings.controlHudHorizontal&&screen.x>=620;
+        const bool horizontal=settings.controlHudHorizontal&&screen.x>=720;
         if(horizontal)ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,{10,3});
         const float top=ImGui::GetCursorScreenPos().y;
         auto* draw=ImGui::GetWindowDrawList();

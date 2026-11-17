@@ -313,7 +313,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                     float miniIconSize, float bigIconSize, float miniTrailSize, float bigTrailSize,
                     float worldIconSize, float worldTrailSize,
                     bool playerBubble, float bubbleRadius, float bubbleFeather, bool blishMapTrails,
-                    float worldMarkerDistance,float worldTrailDistance,const WorldPass* worldPass) {
+                    float worldMarkerDistance,float worldTrailDistance,const WorldPass* worldPass,float verticalOffset) {
     // ImGui stores raw SRV pointers in its draw list. A menu click later in the
     // same frame must not release a texture until those commands are consumed.
     cachedTexturesOnly_=worldPass && worldPass->cachedTexturesOnly;
@@ -424,9 +424,14 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                 const float lineWidth=blishMapTrails ? MapTrailVisuals::LineWidth(mapUI,mapTrailMultiplier) : 0;
                 draw->PushClipRect(mp.min,mp.max,true);
                 for(const auto& strip:t.strips) {
-                    double phase=0;
+                    double phase=0,worldDistance=0;const double reveal=CheckpointRuntime::RevealLimit(t,strip,true);
                     for(size_t i=1;i<strip.size();++i) {
-                        ImVec2 a=mp.Screen(strip[i-1]), b=mp.Screen(strip[i]);
+                        const Vec3 worldStart=strip[i-1];Vec3 worldEnd=strip[i];
+                        const double edge=std::sqrt(static_cast<double>(Dot(Sub(worldEnd,worldStart),Sub(worldEnd,worldStart))));
+                        if(worldDistance>=reveal)break;
+                        if(edge>0&&worldDistance+edge>reveal)worldEnd=Lerp(worldStart,worldEnd,static_cast<float>((reveal-worldDistance)/edge));
+                        worldDistance+=edge;
+                        ImVec2 a=mp.Screen(worldStart), b=mp.Screen(worldEnd);
                         const ImVec2 original=a;
                         const float fullLength=std::hypot(b.x-a.x,b.y-a.y);
                         if(Clip(a,b,mp.min,mp.max)) {
@@ -459,7 +464,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
             auto trailStyle=t.style;trailStyle.tint=CheckpointRuntime::Tint(t,t.style.tint);
             VisualAttributes::ScaleFade(trailStyle,worldTrailDistance);
             if(inWorld) for(const auto& strip:t.strips) {
-                double phase=0;
+                double phase=0;const double reveal=CheckpointRuntime::RevealLimit(t,strip,false);
                 for(size_t i=1;i<strip.size();++i) {
                     Vec3 start=strip[i-1], end=strip[i];
                     // World distance belongs to the complete strip, even when
@@ -468,6 +473,9 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                     if(!std::isfinite(fullLength)) continue;
                     const double segmentPhase=phase;
                     phase+=fullLength;
+                    if(segmentPhase>=reveal)break;
+                    if(phase>reveal)end=Lerp(start,end,static_cast<float>((reveal-segmentPhase)/fullLength));
+                    start.y+=verticalOffset;end.y+=verticalOffset;const Vec3 originalStart=start;
                     if(!ClipNear(proj,start,end)) continue;
                     ImVec2 a{},b{};
                     if(!proj.Screen(start,a) || !proj.Screen(end,b)) continue;
@@ -480,7 +488,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                         const double tile=VisualAttributes::WorldTrailBaseWidth;
                         GroundRibbon(draw,proj,avatar,start,end,width,
                             trailStyle,texture,img ? img->width : 0,img ? img->height : 0,
-                            segmentPhase+std::sqrt(static_cast<double>(Dot(Sub(start,strip[i-1]),Sub(start,strip[i-1]))))
+                            segmentPhase+std::sqrt(static_cast<double>(Dot(Sub(start,originalStart),Sub(start,originalStart))))
                                 + VisualAttributes::AnimationOffset(ImGui::GetTime(),t.style.animSpeed,tile),
                             worldTileBudget,io.DisplaySize,playerBubble,bubbleRadius,bubbleFeather,worldQuad);
                     }
@@ -502,7 +510,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                 // Camera-facing quads always have clockwise screen winding.
                 if(worldFacing && VisualAttributes::Culled(p.style.cull,1.0f))return;
                 if(worldFacing && worldQuad && image) {
-                    Vec3 center=p.position;center.y+=p.style.height+AttributeRuntime::BounceOffset(p);
+                    Vec3 center=p.position;center.y+=p.style.height+AttributeRuntime::BounceOffset(p)+verticalOffset;
                     const float halfWorld=half*proj.Depth(center)/proj.focal;
                     const Vec3 right={proj.right.x*halfWorld,proj.right.y*halfWorld,proj.right.z*halfWorld};
                     const Vec3 up={proj.up.x*halfWorld,proj.up.y*halfWorld,proj.up.z*halfWorld};
@@ -517,7 +525,7 @@ void Renderer::Draw(const std::vector<TacoPack::Pack>& packs, const Mumble::Data
                 else draw->AddCircleFilled(pos,std::max(half,3.0f),Tint(markerTint,alpha));
             };
             if(inWorld) {
-                Vec3 point=p.position; point.y+=p.style.height+AttributeRuntime::BounceOffset(p);
+                Vec3 point=p.position; point.y+=p.style.height+AttributeRuntime::BounceOffset(p)+verticalOffset;
                 ImVec2 screen; float depth=proj.Depth(point);
                 const float opacity=VisualAttributes::Opacity(p.style,std::sqrt(Dot(Sub(point,avatar),Sub(point,avatar))),worldMarkerDistance) *
                     Bubble(point,avatar,playerBubble && p.style.canFade,bubbleRadius,bubbleFeather);

@@ -21,10 +21,12 @@ namespace AppSettings {
         bool goodRenderDepth=false;
         bool searchEnabled=false;
         bool filterByMap=false;
+        bool luaScriptAlerts=true;
+        float worldVerticalOffset=0; // Additive world meters; Control HUD only.
         bool controlHudEnabled=true,controlHudHorizontal=false;
         float worldMarkerDistance=1.0f,worldTrailDistance=1.0f;
         std::array<Shortcut,4> shortcuts{}; // Legacy migration defaults only; Nexus owns active keybinds.
-        HudPosition infoHud,copyHud;
+        HudPosition infoHud,copyHud,checkpointHud,resetHud;
         NestingStyle nestingStyle = NestingStyle::Taquito;
         MapTrailStyle mapTrailStyle = MapTrailStyle::Taco;
         bool world = true, mini = true, big = true;
@@ -41,7 +43,8 @@ namespace AppSettings {
     void Flush();
     void Shutdown(); // Drain final saves and close the worker queue before unloading.
     void QueueFileSave(const std::filesystem::path& path,std::string body);
-    void QueueSerializedSave(const std::filesystem::path& path,std::function<std::string()> build,size_t maxBytes=(std::numeric_limits<size_t>::max)());
+    void QueueSerializedSave(const std::filesystem::path& path,std::function<std::string()> build,size_t maxBytes=(std::numeric_limits<size_t>::max)(),bool uniqueTemp=false);
+    void QueueFileDelete(const std::filesystem::path& path);
     bool SaveFailed(const std::filesystem::path& path);
     void Load(const std::filesystem::path& directory, std::vector<TacoPack::Pack>& packs);
     void Save(const std::filesystem::path& directory, const std::vector<TacoPack::Pack>& packs);

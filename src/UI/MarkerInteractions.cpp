@@ -21,14 +21,17 @@ struct RuntimeState {
     std::string notification;
     double notificationUntil=0,lastAutomatic=-10;
     bool hudChanged=false;
+    std::string dismissedCheckpoint;
+    bool resetNotification=false;
 };
 AddonLifetime::Storage<RuntimeState> storage;
-auto& [proximity,dismissed,requested,notification,notificationUntil,lastAutomatic,hudChanged]=storage.Get();
+auto& [proximity,dismissed,requested,notification,notificationUntil,lastAutomatic,hudChanged,dismissedCheckpoint,resetNotification]=storage.Get();
 bool Copy(const std::string& text,const std::string& message) {
     if(text.empty() || AppSettings::Get().clipboardMode==AppSettings::ClipboardMode::Never) return false;
     ImGui::SetClipboardText(text.c_str());
     const auto* clipboard=ImGui::GetClipboardText();
     const bool success=clipboard && std::strcmp(clipboard,text.c_str())==0;
+    resetNotification=false;
     notification=success ? MarkerActions::Message(text,message) : "Clipboard unavailable. Try Copy again.";
     notificationUntil=ImGui::GetTime()+3;
     return success;
@@ -114,8 +117,9 @@ void MarkerInteractions::RequestInteract() {requested.store(true,std::memory_ord
 void MarkerInteractions::Reset() {
     proximity.Reset();requested.store(false,std::memory_order_release);
     dismissed.clear();
+    dismissedCheckpoint.clear();
     AttributeRuntime::ResetFocus();
-    notification.clear();notificationUntil=0;lastAutomatic=-10;
+    notification.clear();notificationUntil=0;lastAutomatic=-10;resetNotification=false;
 }
 void MarkerInteractions::CopyCategory(const std::string& text,const std::string& message) {Copy(text,message);}
 void MarkerInteractions::Render(const std::vector<TacoPack::Pack>& packs,const Mumble::Data* mumble,bool enabled,void (*save)(),void (*categoryChanged)()) {
@@ -132,9 +136,13 @@ void MarkerInteractions::Render(const std::vector<TacoPack::Pack>& packs,const M
     const bool mayCopy=active && !mumble->Context.IsTextboxFocused &&
         settings.clipboardMode!=AppSettings::ClipboardMode::Never && !ImGui::GetIO().WantTextInput;
     const bool mayActivate=active && !mumble->Context.IsTextboxFocused && !ImGui::GetIO().WantTextInput;
+    const auto checkpoint=mayActivate ? CheckpointRuntime::GetPrompt(settings.showMarkerInfo) : CheckpointRuntime::Prompt{};
+    if(checkpoint.key.empty() || checkpoint.key!=dismissedCheckpoint) dismissedCheckpoint.clear();
+    const bool checkpointHandled=mayActivate && interact && CheckpointRuntime::Act(checkpoint);
     bool categoriesChanged=false;
     const auto activate=[&](const TacoPack::Marker* marker,bool automatic) {
         if(!marker || !AttributeRuntime::Visible(*marker))return;
+        if(marker->style.cpFinish&&!marker->style.cpReset.empty())return;
         // Category actions and behavior activation are independent of clipboard policy.
         if(mayCopy && !marker->style.copy.empty() && (!automatic ||
             (settings.clipboardMode==AppSettings::ClipboardMode::Always && ImGui::GetTime()-lastAutomatic>=2))) {
@@ -148,19 +156,35 @@ void MarkerInteractions::Render(const std::vector<TacoPack::Pack>& packs,const M
         const bool reset=CheckpointRuntime::ResetFrom(*marker);
         AttributeRuntime::EndActivationBatch();
         if(reset || AttributeRuntime::HasLoadedResetTarget(*marker,packs)) {
+            resetNotification=true;
             notification=CheckpointAttributes::Trim(marker->style.resetMessage).empty()?std::string{}:marker->style.resetMessage;
             notificationUntil=notification.empty()?0:ImGui::GetTime()+3.5;
         }
     };
     AttributeRuntime::BeginActivationBatch();
-    if(mayActivate && interact) activate(selection.action,false);
+    if(mayActivate && interact && !checkpointHandled) activate(selection.action,false);
     if(mayActivate) for(const auto* marker:selection.entered)
         if(!interact || marker!=selection.action)activate(marker,true);
     AttributeRuntime::EndActivationBatch();
     const auto* info=active && settings.showMarkerInfo && selection.info && AttributeRuntime::Visible(*selection.info) && !dismissed.count(selection.info) ? selection.info : nullptr;
     const auto* copy=mayCopy && selection.copy && AttributeRuntime::Visible(*selection.copy) ? selection.copy : nullptr;
     const auto display=ImGui::GetIO().DisplaySize;
-    if(info && display.x>0 && display.y>0) DrawInfoHud(info,display);
+    if(info && checkpoint.key.empty() && display.x>0 && display.y>0) DrawInfoHud(info,display);
+    if(!checkpoint.key.empty() && checkpoint.key!=dismissedCheckpoint && display.x>0 && display.y>0) {
+        bool open=true;
+        auto& saved=AppSettings::Get().checkpointHud;
+        ImGui::SetNextWindowPos(saved.saved?ImVec2{saved.x,saved.y}:ImVec2{display.x*.5f,display.y*.8f},ImGuiCond_Appearing,saved.saved?ImVec2{0,0}:ImVec2{.5f,.5f});
+        ImGui::SetNextWindowSizeConstraints({std::min(180.0f,display.x),0},{std::min(440.0f,display.x),std::max(60.0f,display.y*.45f)});
+        if(ImGui::Begin("Checkpoint##TaquitoCheckpoint",&open,ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoFocusOnAppearing|ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoSavedSettings)) {
+            if(!checkpoint.text.empty()){ImGui::PushTextWrapPos(ImGui::GetCursorPosX()+std::min(400.0f,display.x-32));ImGui::TextUnformatted(checkpoint.text.c_str());ImGui::PopTextWrapPos();}
+            if(checkpoint.action&&ImGui::Button(checkpoint.caption.c_str()))CheckpointRuntime::Act(checkpoint);
+        }
+        // Let ImGui finish its initial auto-size/pivot before storing the position.
+        if(saved.saved||!ImGui::IsWindowAppearing())RememberHud(saved,display);
+        ImGui::End();if(!open)dismissedCheckpoint=checkpoint.key;
+    }
+    std::string resetText;
+    if(CheckpointRuntime::ConsumeResetMessage(resetText)){resetNotification=true;notification=CheckpointAttributes::Trim(resetText).empty()?std::string{}:resetText;notificationUntil=notification.empty()?0:ImGui::GetTime()+3.5;}
     if(copy && display.x>0 && display.y>0) {
         auto& saved=AppSettings::Get().copyHud;
         const float width=std::min(480.0f,std::max(1.0f,display.x-16));
@@ -186,16 +210,20 @@ void MarkerInteractions::Render(const std::vector<TacoPack::Pack>& packs,const M
         ImGui::End();ImGui::PopStyleVar();
     }
     if(categoriesChanged) {if(categoryChanged)categoryChanged();else if(save)save();}
-    if(hudChanged && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && save) {save();hudChanged=false;}
     // Separator clicks can also show feedback when world overlays are off.
     if(mumble && mumble->Context.IsGameFocused && ImGui::GetTime()<notificationUntil && !notification.empty()) {
-        ImGui::SetNextWindowPos({display.x*.5f,display.y*.18f},ImGuiCond_Always,{.5f,0});
+        auto& saved=AppSettings::Get().resetHud;
+        if(resetNotification)ImGui::SetNextWindowPos(saved.saved?ImVec2{saved.x,saved.y}:ImVec2{display.x*.5f,display.y*.8f},ImGuiCond_Appearing,saved.saved?ImVec2{0,0}:ImVec2{.5f,.5f});
+        else ImGui::SetNextWindowPos({display.x*.5f,display.y*.18f},ImGuiCond_Always,{.5f,0});
         ImGui::SetNextWindowSizeConstraints({0,0},{std::max(100.0f,display.x*.8f),std::max(40.0f,display.y*.25f)});
-        if(ImGui::Begin("##TaquitoCopyNotice",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|
-            ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoFocusOnAppearing)) {
+        const auto flags=ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoFocusOnAppearing|
+            (resetNotification?ImGuiWindowFlags_NoCollapse:ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoInputs);
+        if(ImGui::Begin(resetNotification?"Reset##TaquitoResetNotice":"##TaquitoCopyNotice",nullptr,flags)) {
             ImGui::PushTextWrapPos(ImGui::GetFontSize()*32);
             ImGui::TextUnformatted(notification.c_str());ImGui::PopTextWrapPos();
         }
+        if(resetNotification&&(saved.saved||!ImGui::IsWindowAppearing()))RememberHud(saved,display);
         ImGui::End();
     }
+    if(hudChanged && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && save) {save();hudChanged=false;}
 }

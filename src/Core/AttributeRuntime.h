@@ -10,6 +10,8 @@ void UpdateFocus(const std::vector<TacoPack::Pack>& packs,TacoPack::Vec3 player,
 void ResetFocus();
 bool MountAllowed(const TacoPack::Style& style);
 bool Visible(const TacoPack::Marker& marker);
+bool Available(const TacoPack::Marker& marker);
+bool Available(const TacoPack::Trail& trail);
 bool Visible(const TacoPack::Trail& trail);
 float BounceOffset(const TacoPack::Marker& marker);
 // Preferences are updated by namespace across the loaded packs, never by display label.

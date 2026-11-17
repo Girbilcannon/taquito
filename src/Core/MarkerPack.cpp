@@ -271,7 +271,7 @@ void Entries(Pack& pack, mz_zip_archive& zip, const ZipIndex& index, Node* root,
                 }
                 if (!t.strips.back().size()) t.strips.pop_back();
                 const bool unique=uniqueGuid(t.map,t.guid,0);
-                if (!t.strips.empty() && (unique || t.style.cpFinish)) pack.trails.push_back(std::move(t));
+                if (!t.strips.empty() && (unique || t.style.cpFinish || t.style.cpTrail)) pack.trails.push_back(std::move(t));
             }
         }
     }

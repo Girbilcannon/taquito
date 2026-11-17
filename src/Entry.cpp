@@ -182,7 +182,7 @@ extern "C" __declspec(dllexport) AddonDefinition_t* GetAddonDef() {
     definition.Version.Major = 1;
     definition.Version.Minor = 0;
     definition.Version.Build = 2;
-    definition.Version.Revision = 0;
+    definition.Version.Revision = 2;
     definition.Author = "Girbilcannon.8259";
     definition.Description = "Lightweight TacO marker and trail pack viewer.";
     definition.Load = OnLoad;

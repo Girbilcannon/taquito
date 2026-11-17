@@ -18,7 +18,7 @@ using Choices=std::map<std::string,std::map<std::string,bool>>;
 // The worker serializes owned snapshots; it never reads live settings or pack pointers.
 class SettingsWriter {
     std::mutex mutex;std::condition_variable cv;std::thread worker;
-    struct Job{std::function<std::string()> build;size_t maxBytes;};
+    struct Job{std::function<std::string()> build;size_t maxBytes;bool erase=false,unique=false;};
     std::map<std::filesystem::path,Job> pending;std::map<std::filesystem::path,std::string> written;bool busy=false,stop=false;
     std::set<std::filesystem::path> failed;
     bool closed=false;
@@ -27,20 +27,21 @@ class SettingsWriter {
         for(;;){cv.wait(lock,[&]{return stop||!pending.empty();});if(stop&&pending.empty())break;
             auto job=pending.extract(pending.begin());busy=true;lock.unlock();
             bool saved=false;
-            try{auto body=job.mapped().build();if(body.size()<=job.mapped().maxBytes){
+            try{if(job.mapped().erase){std::error_code ec;std::filesystem::remove(job.key(),ec);saved=!ec;written.erase(job.key());}
+            else {auto body=job.mapped().build();if(body.size()<=job.mapped().maxBytes){
                 const auto last=written.find(job.key());
                 saved=last!=written.end()&&last->second==body;
-                if(!saved)saved=AtomicFile::Write(job.key(),body);
+                if(!saved)saved=AtomicFile::Write(job.key(),body,job.mapped().unique);
                 if(saved)written[job.key()]=std::move(body);
-            }}catch(...){saved=false;}
+            }}}catch(...){saved=false;}
             lock.lock();if(saved)failed.erase(job.key());else failed.insert(job.key());busy=false;cv.notify_all();
         }
     }
 public:
     ~SettingsWriter(){Shutdown();}
     bool Failed(const std::filesystem::path&path){std::lock_guard lock(mutex);return failed.count(path)!=0;}
-    void Queue(const std::filesystem::path&path,std::function<std::string()> build,size_t maxBytes){
-        std::lock_guard lock(mutex);if(closed)return;pending[path]={std::move(build),maxBytes};
+    void Queue(const std::filesystem::path&path,std::function<std::string()> build,size_t maxBytes,bool unique=false,bool erase=false){
+        std::lock_guard lock(mutex);if(closed)return;pending[path]={std::move(build),maxBytes,erase,unique};
         if(!worker.joinable()){stop=false;worker=std::thread([this]{Run();});}cv.notify_all();
     }
     void Flush(){
@@ -67,7 +68,8 @@ auto& [state,cachedChoices,cachedDirectory,cacheReady,cacheWritable,writer]=stor
 void AppSettings::Flush(){writer.Flush();}
 void AppSettings::Shutdown(){writer.Shutdown();}
 void AppSettings::QueueFileSave(const std::filesystem::path&path,std::string body){QueueSerializedSave(path,[body=std::move(body)]{return body;});}
-void AppSettings::QueueSerializedSave(const std::filesystem::path&path,std::function<std::string()> build,size_t maxBytes){writer.Queue(path,std::move(build),maxBytes);}
+void AppSettings::QueueSerializedSave(const std::filesystem::path&path,std::function<std::string()> build,size_t maxBytes,bool unique){writer.Queue(path,std::move(build),maxBytes,unique);}
+void AppSettings::QueueFileDelete(const std::filesystem::path&path){writer.Queue(path,{},0,false,true);}
 bool AppSettings::SaveFailed(const std::filesystem::path&path){return writer.Failed(path);}
 AppSettings::State& AppSettings::Get() { return state; }
 void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoPack::Pack>& packs) {
@@ -79,6 +81,7 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
     state.goodRenderDepth=false;
     state.searchEnabled=false;
     state.filterByMap=false;
+    state.luaScriptAlerts=true;state.worldVerticalOffset=0;state.checkpointHud={};state.resetHud={};
     state.controlHudEnabled=true;state.controlHudHorizontal=false;
     state.worldMarkerDistance=state.worldTrailDistance=1.0f;
     state.presetsEnabled=false;state.quickCloseMenu=false;state.shortcuts={};
@@ -98,10 +101,10 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
         if(kind=="shortcutRender"||kind=="shortcutNext"||kind=="shortcutPrevious"||kind=="shortcutMenu") {
             Shortcut key;if(!(input>>key.key>>key.ctrl>>key.alt>>key.shift))continue;
             if(key.key>=0&&key.key<256)state.shortcuts[kind=="shortcutRender"?0:kind=="shortcutNext"?1:kind=="shortcutPrevious"?2:3]=key;
-        } else if(kind=="infoHud" || kind=="copyHud") {
+        } else if(kind=="infoHud" || kind=="copyHud" || kind=="checkpointHud" || kind=="resetHud") {
             bool saved=false;float x=0,y=0;if(!(input>>saved>>x>>y))continue;
             if(std::isfinite(x)&&std::isfinite(y)) {
-                auto& hud=kind=="infoHud" ? state.infoHud : state.copyHud;hud={saved,x,y};
+                auto& hud=kind=="infoHud" ? state.infoHud : kind=="copyHud" ? state.copyHud : kind=="checkpointHud" ? state.checkpointHud : state.resetHud;hud={saved,x,y};
             }
         } else if (kind == "category") {
             std::string file, key; bool visible;
@@ -119,6 +122,8 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
             state.clipboardMode=static_cast<ClipboardMode>(std::clamp(value,0,2));
         } else if (kind == "scaleBaselineV1") {
             if (!(input >> normalizedScaleBaseline)) continue;
+        } else if (kind == "worldVerticalOffset") {
+            float value=0;if((input>>value)&&std::isfinite(value))state.worldVerticalOffset=std::clamp(value,-2.0f,2.0f);
         } else if (kind == "miniSize" || kind == "bigSize" || kind == "miniIconSize" || kind == "miniTrailSize" ||
                    kind == "bigIconSize" || kind == "bigTrailSize" || kind == "worldIconSize" || kind == "worldTrailSize" ||
                    kind == "bubbleRadius" || kind == "bubbleFeather" || kind=="worldMarkerDistance" || kind=="worldTrailDistance") {
@@ -152,6 +157,7 @@ void AppSettings::Load(const std::filesystem::path& directory, std::vector<TacoP
             else if (kind == "goodRenderDepth") state.goodRenderDepth=value;
             else if (kind == "searchEnabled") state.searchEnabled=value;
             else if (kind == "filterByMap") state.filterByMap=value;
+            else if (kind == "luaScriptAlerts") state.luaScriptAlerts=value;
             else if (kind == "controlHudEnabled") state.controlHudEnabled=value;
             else if (kind == "controlHudHorizontal") state.controlHudHorizontal=value;
             else if (kind == "showMarkerInfo") state.showMarkerInfo = value;
@@ -203,6 +209,8 @@ void AppSettings::Save(const std::filesystem::path& directory, const std::vector
     for(size_t i=0;i<settings.shortcuts.size();++i){const auto&k=settings.shortcuts[i];output<<shortcutNames[i]<<' '<<k.key<<' '<<k.ctrl<<' '<<k.alt<<' '<<k.shift<<'\n';}
     output << "infoHud " << settings.infoHud.saved << ' ' << settings.infoHud.x << ' ' << settings.infoHud.y << '\n';
     output << "copyHud " << settings.copyHud.saved << ' ' << settings.copyHud.x << ' ' << settings.copyHud.y << '\n';
+    output << "checkpointHud " << settings.checkpointHud.saved << ' ' << settings.checkpointHud.x << ' ' << settings.checkpointHud.y << '\n';
+    output << "resetHud " << settings.resetHud.saved << ' ' << settings.resetHud.x << ' ' << settings.resetHud.y << '\n';
     output << "nestingStyle " << static_cast<int>(settings.nestingStyle) << '\n';
     output << "mapTrailStyle " << static_cast<int>(settings.mapTrailStyle) << '\n';
     output << "clipboardMode " << static_cast<int>(settings.clipboardMode) << "\nshowMarkerInfo " << settings.showMarkerInfo << '\n';
@@ -211,6 +219,7 @@ void AppSettings::Save(const std::filesystem::path& directory, const std::vector
     output << "goodRenderDepth " << settings.goodRenderDepth << '\n';
     output << "searchEnabled " << settings.searchEnabled << '\n';
     output << "filterByMap " << settings.filterByMap << '\n';
+    output << "luaScriptAlerts " << settings.luaScriptAlerts << "\nworldVerticalOffset " << settings.worldVerticalOffset << '\n';
     output << "controlHudEnabled " << settings.controlHudEnabled << "\ncontrolHudHorizontal " << settings.controlHudHorizontal << '\n';
     output << "worldMarkerDistance " << settings.worldMarkerDistance << "\nworldTrailDistance " << settings.worldTrailDistance << '\n';
     output << "world " << settings.world << "\nmini " << settings.mini << "\nbig " << settings.big << '\n';

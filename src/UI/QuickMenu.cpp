@@ -105,7 +105,7 @@ void OnGoodRenderMoment(const good_render::Moment* moment) {
     renderer.Draw(packs,&good.mumble,good.hasIdentity ? &good.identity : nullptr,
         s.renderingEnabled&&s.world,false,false,s.miniIconSize,s.bigIconSize,s.miniTrailSize,s.bigTrailSize,
         s.worldIconSize,s.worldTrailSize,s.playerBubble,s.bubbleRadius,s.bubbleFeather,
-        s.mapTrailStyle==AppSettings::MapTrailStyle::BlishHUD,s.worldMarkerDistance,s.worldTrailDistance,&pass);
+        s.mapTrailStyle==AppSettings::MapTrailStyle::BlishHUD,s.worldMarkerDistance,s.worldTrailDistance,&pass,s.worldVerticalOffset);
     good.worldPasses.fetch_add(1,std::memory_order_relaxed);
     good.drewWorld.store(true,std::memory_order_release);
     good.drewDepth.store(pass.worldQuad!=nullptr,std::memory_order_release);
@@ -231,10 +231,21 @@ void DrawMenu() {
     ImGui::SetNextWindowSizeConstraints({std::min(250.0f,limit.x),0},limit);
     if (ImGui::Begin("Taquito##menu", &showMenu,ImGuiWindowFlags_AlwaysAutoResize)) {
         if(AppSettings::Get().searchEnabled) {
-            ImGui::SetNextItemWidth(-1);
+            const float controlsWidth=ImGui::GetFrameHeight()*2+ImGui::CalcTextSize("Filters").x+
+                ImGui::GetStyle().ItemInnerSpacing.x+ImGui::GetStyle().ItemSpacing.x*2;
+            ImGui::SetNextItemWidth(std::max(40.0f,ImGui::GetContentRegionAvail().x-controlsWidth));
             if(ImGui::InputTextWithHint("##TaquitoCategorySearch","Search...",search.text.data(),search.text.size())) {
                 search.dirty=true;
                 if(UpdateSearchFilter())PublishPathingState();
+            }
+            ImGui::SameLine();
+            bool filter=AppSettings::Get().filterByMap;
+            if(ImGui::Checkbox("Filters",&filter)){AppSettings::Get().filterByMap=filter;Save();}
+            ImGui::SameLine();
+            if(ImGui::ArrowButton("##QuickFilterOptions",ImGuiDir_Down))ImGui::OpenPopup("##QuickFilters");
+            if(ImGui::BeginPopup("##QuickFilters")) {
+                if(ImGui::MenuItem("Current Map",nullptr,&filter)){AppSettings::Get().filterByMap=filter;Save();}
+                ImGui::EndPopup();
             }
         }
         if (loading.load()) ImGui::TextUnformatted("Reading TacoPacks...");
@@ -298,7 +309,7 @@ void QuickMenu::Initialize() {
     auto* api=AppRuntime::GetApi();
     PathingState::Initialize(api ? api->Events_Raise : nullptr);
     AttributeRuntime::Initialize(AppRuntime::GetAddonDirectory());
-    CheckpointRuntime::Clear();
+    CheckpointRuntime::Initialize(AppRuntime::GetAddonDirectory());
     renderer.Initialize(api); Refresh();
     good.ready=false;good.drewWorld=false;good.lastFrame=false;good.worldPasses=0;
     good.link=good_render::open();
@@ -311,6 +322,7 @@ void QuickMenu::Shutdown() {
     OnlinePacks::Stop();
     if(loader.joinable())loader.join();
     if(packsReady&&Presets::Enabled()){Presets::Capture(packs);Presets::Save();}
+    CheckpointRuntime::SaveProgress();
     AppSettings::Save(AppRuntime::GetAddonDirectory(),packs);
     AppSettings::Shutdown();
     // Do not use CategoryChanged here: unloading must not publish an active
@@ -365,12 +377,13 @@ void QuickMenu::Render() {
         playableMumble ? playableMumble->Context.ShardID : 0,playableMumble ? playableMumble->Context.InstanceID : 0,
         playableMumble ? character : std::string{},playableMumble ? static_cast<int>(playableMumble->Context.MountIndex) : -1,
         now,ImGui::GetTime());
+    CheckpointRuntime::SetContext(character,playableMumble ? playableMumble->Context.ShardID : 0,playableMumble ? playableMumble->Context.InstanceID : 0,ImGui::GetTime());
     const TacoPack::Vec3 player=playableMumble ? TacoPack::Vec3{playableMumble->AvatarPosition.X,playableMumble->AvatarPosition.Y,playableMumble->AvatarPosition.Z} : TacoPack::Vec3{};
     AttributeRuntime::UpdateFocus(packs,player,playableMumble && settings.renderingEnabled && settings.world && !playableMumble->Context.IsMapOpen);
-    MarkerInteractions::Render(packs,playableMumble,settings.renderingEnabled&&settings.world,Save,CategoryChanged);
     const bool checkpointContact=playableMumble && settings.renderingEnabled && settings.world && playableMumble->Context.IsGameFocused &&
         !playableMumble->Context.IsMapOpen && !playableMumble->Context.IsTextboxFocused && !ImGui::GetIO().WantTextInput;
     CheckpointRuntime::UpdateContact(playableMumble ? playableMumble->Context.MapID : 0,player,checkpointContact);
+    MarkerInteractions::Render(packs,playableMumble,settings.renderingEnabled&&settings.world,Save,CategoryChanged);
     const auto mapOwner=PieUIBridge::GetMapOwnership();
     const bool drawnInMoment=good.drewWorld.exchange(false,std::memory_order_acq_rel);
     good.lastFrame.store(drawnInMoment,std::memory_order_release);
@@ -387,7 +400,7 @@ void QuickMenu::Render() {
                   settings.worldIconSize, settings.worldTrailSize,
                   settings.playerBubble, settings.bubbleRadius, settings.bubbleFeather,
                   settings.mapTrailStyle==AppSettings::MapTrailStyle::BlishHUD,
-                  settings.worldMarkerDistance,settings.worldTrailDistance,&nexusPass);
+                  settings.worldMarkerDistance,settings.worldTrailDistance,&nexusPass,settings.worldVerticalOffset);
     if(resetSubscription && good.link.block)good.slot=good_render::subscribe(*good.link.block,OnGoodRenderMoment,0);
     DrawMenu();
     PackBrowserWindow::Render();

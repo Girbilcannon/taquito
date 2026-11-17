@@ -138,12 +138,14 @@ double AttributeRuntime::NextWeekly(double now) {
 bool AttributeRuntime::MountAllowed(const TacoPack::Style& style) {
     return !style.mountRestricted||(currentMount>=0&&currentMount<11&&(style.mounts&(1u<<currentMount)));
 }
-bool AttributeRuntime::Visible(const TacoPack::Marker& marker) {
-    if(!TacoPack::IsVisible(marker.category)||!MountAllowed(marker.style)||!CheckpointRuntime::Visible(marker))return false;
+bool AttributeRuntime::Available(const TacoPack::Marker& marker) {
+    if(!TacoPack::IsVisible(marker.category)||!MountAllowed(marker.style))return false;
     if(marker.style.behavior<=0 || !TacoPack::SupportedBehavior(marker.style.behavior))return true;
     return Activated(marker)==marker.style.invertBehavior;
 }
-bool AttributeRuntime::Visible(const TacoPack::Trail& trail) {return TacoPack::IsVisible(trail.category)&&MountAllowed(trail.style)&&CheckpointRuntime::Visible(trail);}
+bool AttributeRuntime::Available(const TacoPack::Trail& trail) {return TacoPack::IsVisible(trail.category)&&MountAllowed(trail.style);}
+bool AttributeRuntime::Visible(const TacoPack::Marker& marker) {return Available(marker)&&CheckpointRuntime::Visible(marker);}
+bool AttributeRuntime::Visible(const TacoPack::Trail& trail) {return Available(trail)&&CheckpointRuntime::Visible(trail);}
 bool AttributeRuntime::HasLoadedResetTarget(const TacoPack::Marker&marker,const std::vector<TacoPack::Pack>&packs) {
     for(const auto&pack:packs)for(const auto&target:pack.markers)
         if(!target.stateKey.empty()&&std::find(marker.style.resetGuids.begin(),marker.style.resetGuids.end(),target.stateKey)!=marker.style.resetGuids.end())return true;

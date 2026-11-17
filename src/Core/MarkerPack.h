@@ -20,6 +20,11 @@ struct Style {
     bool autoTrigger = false;
     std::vector<std::string> resetGuids, nextChecks; // Canonical GUID identities; original XML stays in attributes.
     bool cpFinish = false;
+    bool cpManual=false,cpMemory=false,keepVisible=false,cpExpanded=false;
+    std::string cpInfo,cpTriggerText;
+    std::vector<std::string> cpSegments,cpSegmentIds;
+    bool cpTrail=false,trailDraw=false,cpFollowsWorld=false;
+    float drawSpeed=20;
     std::string resetMessage;
     bool checkpoint = false, cpResetConfigured = false, cpResetActivationAllowed = false;
     std::string cpReset;

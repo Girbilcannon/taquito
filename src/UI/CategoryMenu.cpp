@@ -22,7 +22,7 @@ struct ParentMenuHover {
     }
 };
 void Tip(const TacoPack::Category& category,bool hovered) {
-    if(hovered && !category.parent && category.containsLua) {
+    if(hovered && !category.parent && category.containsLua && AppSettings::Get().luaScriptAlerts) {
         ImGui::BeginTooltip();
         ImGui::PushTextWrapPos(ImGui::GetFontSize()*32.0f);
         ImGui::TextUnformatted("This pack contains Lua scripts for more advanced features. Taquito does not support Lua scripts. If you need access to these features, your best option is to run Blish HUD and install the Pathing Module.");
@@ -80,7 +80,7 @@ void CategoryMenu::Draw(TacoPack::Category& category,AppSettings::NestingStyle s
     if(category.hidden || category.searchFiltered) return;
     if(style==AppSettings::NestingStyle::Taco) ImGui::PushID(&category);
     else ImGui::PushID(category.key.c_str());
-    const bool markLua=!category.parent && category.containsLua;
+    const bool markLua=!category.parent && category.containsLua && AppSettings::Get().luaScriptAlerts;
     const auto displayName=category.name+(markLua ? " (Contains Lua)" : "");
     if(category.separator) {
         ImGui::Separator();
